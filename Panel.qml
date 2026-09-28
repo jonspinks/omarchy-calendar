@@ -353,6 +353,9 @@ Panel {
     id: firedFile
     path: (Quickshell.env("XDG_RUNTIME_DIR") || (root.home + "/.cache")) + "/blacksheep.calendar-reminded.json"
     printErrors: false
+    // Written through QSaveFile (a fresh temporary file, then a rename), never
+    // opened in place.
+    atomicWrites: true
     onLoaded: {
       try { root.fired = JSON.parse(text()) || {} } catch (e) { root.fired = {} }
       root.firedLoaded = true
