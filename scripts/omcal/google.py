@@ -13,7 +13,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 from . import auth
-from .model import find_join, join_kind, parse_instant, utc_iso
+from .model import find_join, guest, guest_fields, join_kind, parse_instant, utc_iso
 
 API = "https://www.googleapis.com/calendar/v3"
 
@@ -42,6 +42,20 @@ def calendars(tok):
         page = r.get("nextPageToken")
         if not page:
             return out
+
+
+def guests(e, organizer):
+    """The guest list's fields. Google lists the organiser among the guests,
+    except on an event they only put on their own calendar."""
+    org = e.get("organizer") or {}
+    out = [guest(g.get("email"), g.get("displayName"), g.get("responseStatus"), optional=g.get("optional"),
+                 organizer=g.get("organizer") or bool(org.get("email")) and g.get("email") == org.get("email"),
+                 me=g.get("self"), room=g.get("resource"))
+           for g in e.get("attendees") or []]
+    if out and org.get("email") and not any(g["organizer"] for g in out):
+        out.append(guest(org["email"], org.get("displayName"), "accepted", organizer=True, me=org.get("self")))
+    hidden = bool(e.get("attendeesOmitted")) or not organizer and e.get("guestsCanSeeOtherGuests") is False
+    return guest_fields(out, hidden)
 
 
 def normalise(account, cal, e):
@@ -87,6 +101,7 @@ def normalise(account, cal, e):
         "webLink": e.get("htmlLink", ""),
         "etag": e.get("etag", ""),
         "remind": remind,
+        **guests(e, organizer),
     }
 
 

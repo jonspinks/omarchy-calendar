@@ -17,11 +17,14 @@ import urllib.parse
 import urllib.request
 
 from . import files
-from .model import find_join, join_kind, parse_instant, utc_iso
+from .model import find_join, guest, guest_fields, join_kind, parse_instant, utc_iso
 
 API = "https://graph.microsoft.com/v1.0"
 RESPONSES = {"accepted": "accepted", "tentativelyAccepted": "tentative", "declined": "declined",
              "notResponded": "needsAction", "organizer": "organizer", "none": "none"}
+# A guest's answer. "none" is a guest who hasn't answered yet.
+GUEST_RESPONSES = {"accepted": "accepted", "tentativelyAccepted": "tentative", "declined": "declined",
+                   "organizer": "accepted"}
 
 
 class DeltaExpired(Exception):
@@ -52,7 +55,31 @@ def calendars(tok):
     return out
 
 
-def normalise(account, cal, e):
+def guests(e, organizer, response, me):
+    """The guest list's fields. Graph keeps the organiser out of attendees and
+    marks nobody as "you", so the account's own address finds you; your own
+    answer is the event's responseStatus, which is always current."""
+    me = (me or "").lower()
+    org = ((e.get("organizer") or {}).get("emailAddress") or {})
+    org_addr = (org.get("address") or "").lower()
+    out = []
+    for x in e.get("attendees") or []:
+        ea = x.get("emailAddress") or {}
+        addr = ea.get("address") or ""
+        mine = bool(me) and addr.lower() == me
+        answer = GUEST_RESPONSES.get((x.get("status") or {}).get("response"), "needsAction")
+        if mine and not organizer:
+            answer = response
+        out.append(guest(addr, ea.get("name"), answer, optional=x.get("type") == "optional",
+                         organizer=bool(org_addr) and addr.lower() == org_addr, me=mine,
+                         room=x.get("type") == "resource"))
+    if out and org_addr and not any(g["organizer"] for g in out):
+        out.append(guest(org.get("address"), org.get("name"), "accepted", organizer=True,
+                         me=organizer or bool(me) and org_addr == me))
+    return guest_fields(out, hidden=bool(e.get("hideAttendees")) and not organizer)
+
+
+def normalise(account, cal, e, me=""):
     all_day = bool(e.get("isAllDay"))
     s, en = e["start"]["dateTime"], e["end"]["dateTime"]
     if all_day:
@@ -91,13 +118,15 @@ def normalise(account, cal, e):
         "etag": e.get("@odata.etag") or e.get("changeKey", ""),
         # Outlook's reminder: on or off, and how long before the start.
         "remind": [int(e.get("reminderMinutesBeforeStart") or 0)] if e.get("isReminderOn") else [],
+        **guests(e, organizer, response, me),
     }
 
 
-def fetch(account, tok, cal, window, delta_link=None):
+def fetch(account, tok, cal, window, delta_link=None, me=""):
     """Returns (events, removed_ids, next_delta_link).
 
     With no delta_link this is a full fetch of the window, and starts a delta.
+    me is the account's own address, to find you in each guest list.
     """
     if delta_link:
         url = delta_link
@@ -113,7 +142,7 @@ def fetch(account, tok, cal, window, delta_link=None):
             if "@removed" in e or e.get("isCancelled"):
                 removed.append(uid)
             elif "start" in e:
-                events.append(normalise(account, cal, e))
+                events.append(normalise(account, cal, e, me))
         if r.get("@odata.nextLink"):
             url = r["@odata.nextLink"]
             continue

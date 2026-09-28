@@ -8,7 +8,9 @@ import "Model.js" as Model
 // The panel owns the writes. This only collects the fields into a draft
 // (see Model.draftArgs) and says what the person asked for: save, delete,
 // answer, open, join. An event this account can't change is shown read-only,
-// with the invitation answers when it is one.
+// with the invitation answers when it is one. Either way it lists who is
+// invited and what each of them answered; on an event you can change, guests
+// are added and taken off here too, and sent with Save like any other field.
 Item {
   id: editor
 
@@ -38,6 +40,16 @@ Item {
   property string calendarRef: ""
   property bool confirmingDelete: false
 
+  // Guest changes in this edit, sent with Save (see Model.guestEdit).
+  property var invited: []
+  property var uninvited: []
+  property bool showAllGuests: false
+  property string guestError: ""
+  readonly property int guestPreview: 8
+  readonly property var guestList: !!event && event.guests ? event.guests : []
+  readonly property var guestRows: Model.guestRows(guestList, invited, uninvited)
+  readonly property bool hasGuests: guestRows.length > 0 || (!!event && event.guestsHidden)
+
   implicitHeight: form.implicitHeight
 
   function load() {
@@ -55,6 +67,11 @@ Item {
     editor.series = false
     editor.calendarRef = draft.calendar
     editor.confirmingDelete = false
+    editor.invited = draft.invited || []
+    editor.uninvited = draft.uninvited || []
+    editor.showAllGuests = false
+    editor.guestError = ""
+    guestField.text = draft.guestText || ""
     Qt.callLater(function() {
       if (editor.editable) { titleField.forceActiveFocus(); titleField.selectAll() }
       else form.forceActiveFocus()
@@ -76,7 +93,45 @@ Item {
     d.busy = editor.busy
     d.series = editor.series
     d.calendar = editor.calendarRef
+    d.invited = editor.invited
+    d.uninvited = editor.uninvited
+    d.guestText = guestField.text
     return d
+  }
+
+  // The addresses typed in the guest box, onto the list (Enter or Add).
+  function addTypedGuests() {
+    var r = Model.guestEdit(editor.guestList, editor.invited, editor.uninvited, guestField.text)
+    if (r.error) { editor.guestError = r.error; return }
+    editor.invited = r.invited
+    editor.uninvited = r.uninvited
+    editor.guestError = ""
+    guestField.text = ""
+  }
+
+  function removeGuest(email) {
+    var r = Model.guestRemove(editor.invited, editor.uninvited, email)
+    editor.invited = r.invited
+    editor.uninvited = r.uninvited
+  }
+
+  function undoRemoveGuest(email) {
+    var a = String(email).toLowerCase()
+    editor.uninvited = editor.uninvited.filter(function(x) { return x !== a })
+  }
+
+  function answerColor(response) {
+    return response === "accepted" ? Color.accent
+         : response === "declined" ? Color.urgent
+         : response === "tentative" ? editor.foreground
+         : Qt.darker(editor.foreground, 1.5)
+  }
+
+  function answerIcon(row) {
+    if (row.pending === "add") return "󰐕"
+    return row.response === "accepted" ? "󰄬"
+         : row.response === "tentative" ? "󰋗"
+         : row.response === "declined" ? "󰅖" : "󰥔"
   }
 
   function submit() {
@@ -212,6 +267,185 @@ Item {
       placeholderText: "Location"
     }
 
+    // ---- Who's invited, and what they said.
+    Column {
+      visible: !editor.creating && (editor.hasGuests || editor.editable)
+      width: parent.width
+      spacing: Style.space(4)
+
+      Row {
+        spacing: Style.space(10)
+        Caption { text: "GUESTS" }
+        Caption {
+          visible: editor.guestList.length > 0
+          text: Model.guestSummary(editor.guestList, editor.event ? editor.event.guestTotal : 0)
+          font.letterSpacing: 0
+        }
+      }
+
+      Caption {
+        visible: !!editor.event && editor.event.guestsHidden
+        width: parent.width
+        wrapMode: Text.WordWrap
+        text: "The organiser has hidden the guest list."
+        font.letterSpacing: 0
+      }
+
+      Repeater {
+        model: editor.showAllGuests ? editor.guestRows : editor.guestRows.slice(0, editor.guestPreview)
+
+        Item {
+          id: guestRow
+          required property var modelData
+          readonly property bool removing: modelData.pending === "remove"
+          width: parent.width
+          height: Math.max(who.implicitHeight, rowButton.implicitHeight)
+          opacity: removing ? 0.55 : 1
+
+          Text {
+            id: answerGlyph
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(22)
+            textFormat: Text.PlainText
+            text: editor.answerIcon(guestRow.modelData)
+            color: guestRow.modelData.pending === "add" ? Color.accent : editor.answerColor(guestRow.modelData.response)
+            font.family: editor.fontFamily
+            font.pixelSize: Style.font.iconSmall
+          }
+
+          Column {
+            id: who
+            anchors.left: answerGlyph.right
+            anchors.right: answerLabel.left
+            anchors.rightMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+
+            Text {
+              width: parent.width
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              text: guestRow.modelData.title
+              color: editor.foreground
+              font.family: editor.fontFamily
+              font.pixelSize: Style.font.body
+              font.strikeout: guestRow.removing
+            }
+            Text {
+              visible: text !== ""
+              width: parent.width
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              text: [guestRow.modelData.detail, guestRow.modelData.tags].filter(function(x) { return x }).join("  ·  ")
+              color: Qt.darker(editor.foreground, 1.5)
+              font.family: editor.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+          }
+
+          Text {
+            id: answerLabel
+            anchors.right: rowButton.visible ? rowButton.left : parent.right
+            anchors.rightMargin: Style.space(4)
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: guestRow.removing ? "Take off" : guestRow.modelData.answer
+            color: guestRow.modelData.pending ? Color.accent : editor.answerColor(guestRow.modelData.response)
+            font.family: editor.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          Button {
+            id: rowButton
+            visible: editor.editable && !guestRow.modelData.fixed
+            enabled: !editor.saving
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: guestRow.removing ? "󰕌" : "󰍴"
+            tooltipText: guestRow.removing ? "Keep " + guestRow.modelData.title
+                       : guestRow.modelData.pending === "add" ? "Don't invite " + guestRow.modelData.title
+                       : "Take " + guestRow.modelData.title + " off (they get a cancellation when you save)"
+            foreground: editor.foreground
+            fontFamily: editor.fontFamily
+            onClicked: guestRow.removing ? editor.undoRemoveGuest(guestRow.modelData.email)
+                                         : editor.removeGuest(guestRow.modelData.email)
+          }
+        }
+      }
+
+      Button {
+        visible: !editor.showAllGuests && editor.guestRows.length > editor.guestPreview
+        text: "Show all " + editor.guestRows.length
+        foreground: editor.foreground
+        fontFamily: editor.fontFamily
+        fontSize: Style.font.bodySmall
+        onClicked: editor.showAllGuests = true
+      }
+
+      Caption {
+        readonly property int more: editor.event ? editor.event.guestTotal - editor.guestList.length : 0
+        visible: more > 0
+        width: parent.width
+        wrapMode: Text.WordWrap
+        text: "…and " + more + " more. Open it in " + editor.providerName() + " to see everyone."
+        font.letterSpacing: 0
+      }
+
+      // Add guests: one or several addresses, then Enter or Add. They're
+      // invited when the event is saved.
+      Item {
+        visible: editor.editable
+        width: parent.width
+        height: guestField.implicitHeight
+
+        // A plain TextField, not Field: Enter here adds, where Field's saves.
+        TextField {
+          id: guestField
+          anchors.left: parent.left
+          anchors.right: addButton.left
+          anchors.rightMargin: Style.space(6)
+          readOnly: editor.saving
+          foreground: editor.foreground
+          font.family: editor.fontFamily
+          placeholderText: "Add guests: email addresses"
+          onTextChanged: editor.guestError = ""
+          Keys.onPressed: function(event) {
+            if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
+              editor.addTypedGuests()
+              event.accepted = true
+            } else {
+              editor.fieldKey(event)
+            }
+          }
+        }
+
+        Button {
+          id: addButton
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          enabled: !editor.saving && guestField.text.trim() !== ""
+          bordered: true
+          iconText: "󰐕"
+          text: "Add"
+          tooltipText: "Invited when you save"
+          foreground: editor.foreground
+          fontFamily: editor.fontFamily
+          onClicked: editor.addTypedGuests()
+        }
+      }
+
+      Text {
+        visible: editor.guestError !== ""
+        width: parent.width
+        wrapMode: Text.WordWrap
+        textFormat: Text.PlainText
+        text: editor.guestError
+        color: Color.urgent
+        font.family: editor.fontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+    }
+
     Field {
       id: inviteField
       visible: editor.creating
@@ -223,7 +457,7 @@ Item {
       visible: editor.recurring && (editor.editable || editor.invitation)
       width: parent.width
       label: "Every occurrence"
-      description: editor.editable ? "Title, place and delete apply to the whole series; times move one at a time"
+      description: editor.editable ? "Title, place, guests and delete apply to the whole series; times move one at a time"
                                    : "Answer for the whole series"
       checked: editor.series
       foreground: editor.foreground

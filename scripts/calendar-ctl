@@ -14,12 +14,17 @@
     calendar-ctl create <account>/<calendar id> --title <t> --start <when> [--end <when>]
                  [--all-day] [--location <text>] [--invite <email>]... [--busy | --free]
     calendar-ctl update <uid> [--title <t>] [--start <when>] [--end <when>]
-                 [--all-day | --timed] [--location <text>] [--busy | --free] [--series]
+                 [--all-day | --timed] [--location <text>] [--busy | --free]
+                 [--invite <email>]... [--uninvite <email>]... [--series]
+    calendar-ctl guests <uid>         # who is invited, and their answers
     calendar-ctl delete <uid> [--series]
 
 A uid is as in events.json. Times are local ("2026-10-02 14:30") unless they
 carry an offset; with --all-day they are dates, and the end is the day after
 the last (it defaults to one day, or one hour for a timed event).
+
+--invite and --uninvite add and remove guests on an event you can edit; the
+provider sends them the invitation or the cancellation.
 
 Secrets never touch disk here. Each account's refresh token (and, for Google,
 the OAuth client secret) is stored in the GNOME keyring through secret-tool,
@@ -152,6 +157,27 @@ def cmd_choose(show, acc, which):
     sync.main(["sync", "--quiet"])
 
 
+GUEST_ANSWERS = {"accepted": "yes", "tentative": "maybe", "declined": "no", "needsAction": "no answer yet"}
+
+
+def cmd_guests(uid):
+    from omcal import edit
+    e = edit.locate(uid)[3]
+    if e.get("guestsHidden"):
+        print("The organiser has hidden the guest list.")
+    if not e.get("guests"):
+        print("No guests.")
+        return
+    for g in e["guests"]:
+        who = "%s <%s>" % (g["name"], g["email"]) if g["name"] and g["name"] != g["email"] else g["email"]
+        notes = [n for n, on in (("organiser", g["organizer"]), ("you", g["me"]), ("optional", g["optional"]),
+                                 ("room", g["room"])) if on]
+        print("  %-14s %s%s" % (GUEST_ANSWERS[g["response"]], who, "  (%s)" % ", ".join(notes) if notes else ""))
+    more = e.get("guestTotal", 0) - len(e["guests"])
+    if more > 0:
+        print("  ... and %d more" % more)
+
+
 def event_options(args, cmd):
     """--flag value pairs. A value is taken as it is, even if it starts with a
     dash, so a title from anywhere can't turn into an option."""
@@ -163,11 +189,11 @@ def event_options(args, cmd):
             if v is None:
                 die("%s needs a value" % x)
             opt[names[x]] = v
-        elif x == "--invite":
+        elif x in ("--invite", "--uninvite"):
             v = next(it, None)
             if not v or "@" not in v:
-                die("--invite needs an email address")
-            opt.setdefault("invite", []).append(v)
+                die("%s needs an email address" % x)
+            opt.setdefault(x[2:], []).append(v)
         elif x in ("--all-day", "--timed"):
             opt["all_day"] = x == "--all-day"
         elif x in ("--busy", "--free"):
@@ -215,14 +241,16 @@ def main(argv):
                 die("create needs --start")
             opt.setdefault("title", "")
             opt["invite"] = opt.pop("invite", [])
+            if opt.pop("uninvite", None):
+                die("--uninvite is for update")
             opt.pop("series", None)
             print(edit.create(args[0], **opt))
         else:
-            if opt.pop("invite", None):
-                die("--invite is for create")
             edit.update(args[0], **opt)
             print("Saved.")
         sync.main(["sync", "--quiet"])
+    elif cmd == "guests" and len(args) == 1:
+        cmd_guests(args[0])
     elif cmd == "delete" and len(args) in (1, 2) and args[1:] in ([], ["--series"]):
         from omcal import edit, sync
         edit.delete(args[0], series=bool(args[1:]))

@@ -370,7 +370,8 @@ function indexEvents(data, use24h) {
         allDay: e.allDay || day.label === "All day", start: e.start, end: e.end,
         organizer: !!e.organizer, recurring: !!e.recurring,
         calendar: e.calendar, editable: !!e.editable && !!cinfo.editable,
-        busy: e.busy !== false
+        busy: e.busy !== false,
+        guests: e.guests || [], guestTotal: e.guestTotal || 0, guestsHidden: !!e.guestsHidden
       })
     }
   }
@@ -677,7 +678,7 @@ function eventDraft(ev) {
     mode: "edit", uid: ev.uid, calendar: ev.account + "/" + ev.calendar,
     title: ev.title === "(no title)" ? "" : ev.title, location: ev.location || "",
     allDay: String(ev.start).length === 10, invite: "", series: false, recurring: !!ev.recurring,
-    busy: ev.busy !== false
+    busy: ev.busy !== false, guests: ev.guests || [], invited: [], uninvited: [], guestText: ""
   }
   if (d.allDay) {
     d.date = ev.start; d.endDate = addDays(ev.end, -1); d.from = "09:00"; d.to = "10:00"
@@ -697,7 +698,8 @@ function newDraft(dayKey, now, calendarRef) {
   return { mode: "create", uid: "", calendar: calendarRef || "", title: "", location: "",
            allDay: false, date: dayKey, endDate: dayKey,
            from: clockInput(start), to: clockInput(Math.min(start + 60, 23 * 60 + 59)),
-           invite: "", series: false, recurring: false, busy: true, original: null }
+           invite: "", series: false, recurring: false, busy: true, original: null,
+           guests: [], invited: [], uninvited: [], guestText: "" }
 }
 
 // { args: [...] } for calendar-ctl, or { error: "what to fix" }.
@@ -725,11 +727,9 @@ function draftArgs(d) {
     if (d.allDay) args.push("--all-day")
     args.push(d.busy === false ? "--free" : "--busy")
     if (d.location) args.push("--location", d.location)
-    var people = String(d.invite || "").split(/[\s,;]+/).filter(function(x) { return x })
-    for (var i = 0; i < people.length; i++) {
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(people[i])) return { error: people[i] + " isn't an email address." }
-      args.push("--invite", people[i])
-    }
+    var people = parseAddresses(d.invite)
+    if (people.error) return people
+    for (var i = 0; i < people.list.length; i++) args.push("--invite", people.list[i])
     return { args: args }
   }
   var o = d.original || {}
@@ -743,9 +743,96 @@ function draftArgs(d) {
     if (d.series) return { error: "A whole series can't be moved from here: untick it to move this one." }
     args.push("--start", start, "--end", end, d.allDay ? "--all-day" : "--timed")
   }
+  // Guests: the ones added and taken off, and any still typed in the box.
+  var g = guestEdit(d.guests, d.invited, d.uninvited, d.guestText)
+  if (g.error) return g
+  for (var n = 0; n < g.invited.length; n++) args.push("--invite", g.invited[n])
+  for (var m = 0; m < g.uninvited.length; m++) args.push("--uninvite", g.uninvited[m])
   if (args.length === 2) return { args: [] }   // nothing changed
   if (d.series) args.push("--series")
   return { args: args }
+}
+
+// ---- Guests
+
+var EMAIL = /^[^@\s,;<>"']+@[^@\s,;<>"']+\.[^@\s,;<>"']+$/
+
+// Addresses typed into one box, split on spaces, commas or semicolons:
+// { list } lower-cased and each once, or { error }.
+function parseAddresses(text) {
+  var parts = String(text || "").split(/[\s,;]+/).filter(function(x) { return x })
+  var list = []
+  for (var i = 0; i < parts.length; i++) {
+    if (!EMAIL.test(parts[i])) return { error: parts[i] + " isn't an email address." }
+    var a = parts[i].toLowerCase()
+    if (list.indexOf(a) < 0) list.push(a)
+  }
+  return { list: list }
+}
+
+// The guest changes so far, with text typed in the box added to them:
+// { invited, uninvited } or { error }. Typing back someone just taken off
+// undoes that instead.
+function guestEdit(guests, invited, uninvited, text) {
+  var parsed = parseAddresses(text)
+  if (parsed.error) return parsed
+  var have = {}
+  for (var i = 0; i < (guests || []).length; i++) have[String(guests[i].email).toLowerCase()] = true
+  var add = (invited || []).slice(), drop = (uninvited || []).slice()
+  for (var j = 0; j < parsed.list.length; j++) {
+    var a = parsed.list[j], k = drop.indexOf(a)
+    if (k >= 0) drop.splice(k, 1)
+    else if (have[a] || add.indexOf(a) >= 0) return { error: a + " is already invited." }
+    else add.push(a)
+  }
+  return { invited: add, uninvited: drop }
+}
+
+// Take a guest off (or, for one added in this edit, just forget them).
+function guestRemove(invited, uninvited, email) {
+  var a = String(email).toLowerCase()
+  var add = (invited || []).filter(function(x) { return x !== a })
+  if (add.length !== (invited || []).length) return { invited: add, uninvited: (uninvited || []).slice() }
+  var drop = (uninvited || []).slice()
+  if (drop.indexOf(a) < 0) drop.push(a)
+  return { invited: add, uninvited: drop }
+}
+
+var ANSWER_LABELS = { accepted: "Yes", tentative: "Maybe", declined: "No", needsAction: "Waiting" }
+
+// The rows the editor lists: each guest, with what this edit will do to them.
+function guestRows(guests, invited, uninvited) {
+  var rows = []
+  for (var i = 0; i < (guests || []).length; i++) {
+    var g = guests[i], email = String(g.email || "")
+    var named = !!g.name && g.name.toLowerCase() !== email.toLowerCase()
+    var tags = []
+    if (g.organizer) tags.push("organiser")
+    if (g.me) tags.push("you")
+    if (g.optional) tags.push("optional")
+    if (g.room) tags.push("room")
+    rows.push({ email: email, title: named ? g.name : email, detail: named ? email : "",
+                response: g.response, answer: ANSWER_LABELS[g.response] || "Waiting", tags: tags.join(", "),
+                fixed: !!g.organizer || !!g.me,
+                pending: (uninvited || []).indexOf(email.toLowerCase()) >= 0 ? "remove" : "" })
+  }
+  for (var j = 0; j < (invited || []).length; j++)
+    rows.push({ email: invited[j], title: invited[j], detail: "", response: "", answer: "Invite",
+                tags: "", fixed: false, pending: "add" })
+  return rows
+}
+
+// "5 guests · 3 yes, 1 maybe, 1 waiting"
+function guestSummary(guests, total) {
+  var n = { accepted: 0, tentative: 0, declined: 0, needsAction: 0 }
+  for (var i = 0; i < (guests || []).length; i++) n[guests[i].response in n ? guests[i].response : "needsAction"]++
+  var count = Math.max(total || 0, (guests || []).length)
+  var parts = []
+  if (n.accepted) parts.push(n.accepted + " yes")
+  if (n.tentative) parts.push(n.tentative + " maybe")
+  if (n.declined) parts.push(n.declined + " no")
+  if (n.needsAction) parts.push(n.needsAction + " waiting")
+  return count + (count === 1 ? " guest" : " guests") + (parts.length ? " · " + parts.join(", ") : "")
 }
 
 if (typeof module !== "undefined") {
@@ -787,6 +874,11 @@ if (typeof module !== "undefined") {
     reminderTimes: reminderTimes,
     dueReminders: dueReminders,
     dueSnoozes: dueSnoozes,
-    reminderText: reminderText
+    reminderText: reminderText,
+    parseAddresses: parseAddresses,
+    guestEdit: guestEdit,
+    guestRemove: guestRemove,
+    guestRows: guestRows,
+    guestSummary: guestSummary
   }
 }
