@@ -356,7 +356,9 @@ function indexEvents(data, use24h) {
         color: cinfo.color, calendarName: cinfo.name, account: e.account,
         location: e.location || "", join: e.join || null, webLink: e.webLink || "",
         response: e.response, declined: e.response === "declined",
-        allDay: e.allDay || day.label === "All day", start: e.start, end: e.end
+        allDay: e.allDay || day.label === "All day", start: e.start, end: e.end,
+        organizer: !!e.organizer, recurring: !!e.recurring,
+        calendar: e.calendar, editable: !!e.editable && !!cinfo.editable
       })
     }
   }
@@ -589,6 +591,111 @@ function reminderText(r, calName, use24h) {
   return { headline: e.title, body: when + " · " + time + " · " + calName + how }
 }
 
+
+// ---- The event editor. A draft is plain fields, as typed; draftArgs turns
+//      it into calendar-ctl arguments, sending only what changed.
+
+// "9", "9:30", "0930", "14:30", "2pm", "2:30 pm" -> minutes after midnight, or -1.
+function parseClock(text) {
+  var m = String(text || "").trim().toLowerCase().match(/^(\d{1,2})(?::?(\d{2}))?\s*(am|pm|a|p)?$/)
+  if (!m) return -1
+  var h = Number(m[1]), min = m[2] ? Number(m[2]) : 0
+  if (min > 59) return -1
+  if (m[3]) {
+    if (h < 1 || h > 12) return -1
+    h = h % 12 + (m[3].charAt(0) === "p" ? 12 : 0)
+  } else if (h > 23) return -1
+  return h * 60 + min
+}
+
+// "2026-10-02" (or "2026-10-2") -> "2026-10-02", or "" when it isn't a real date.
+function parseDateText(text) {
+  var m = String(text || "").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  if (!m) return ""
+  var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) return ""
+  return keyForDate(d)
+}
+
+function clockInput(minutes) {
+  return pad(Math.floor(minutes / 60)) + ":" + pad(minutes % 60)
+}
+
+function minutesOf(date) { return date.getHours() * 60 + date.getMinutes() }
+
+// A draft from an agenda/grid row (see indexEvents).
+function eventDraft(ev) {
+  var d = {
+    mode: "edit", uid: ev.uid, calendar: ev.account + "/" + ev.calendar,
+    title: ev.title === "(no title)" ? "" : ev.title, location: ev.location || "",
+    allDay: String(ev.start).length === 10, invite: "", series: false, recurring: !!ev.recurring
+  }
+  if (d.allDay) {
+    d.date = ev.start; d.endDate = addDays(ev.end, -1); d.from = "09:00"; d.to = "10:00"
+  } else {
+    var s = new Date(ev.start), e = new Date(ev.end)
+    d.date = keyForDate(s); d.endDate = keyForDate(e)
+    d.from = clockInput(minutesOf(s)); d.to = clockInput(minutesOf(e))
+  }
+  d.original = { title: d.title, location: d.location, allDay: d.allDay,
+                 date: d.date, endDate: d.endDate, from: d.from, to: d.to }
+  return d
+}
+
+// A new event on dayKey: the next whole hour today, 9am on any other day.
+function newDraft(dayKey, now, calendarRef) {
+  var start = dayKey === keyForDate(now) ? Math.min(23 * 60, (now.getHours() + 1) * 60) : 9 * 60
+  return { mode: "create", uid: "", calendar: calendarRef || "", title: "", location: "",
+           allDay: false, date: dayKey, endDate: dayKey,
+           from: clockInput(start), to: clockInput(Math.min(start + 60, 23 * 60 + 59)),
+           invite: "", series: false, recurring: false, original: null }
+}
+
+// { args: [...] } for calendar-ctl, or { error: "what to fix" }.
+function draftArgs(d) {
+  var date = parseDateText(d.date), endDate = parseDateText(d.endDate || d.date)
+  if (!date) return { error: "The start date should look like 2026-10-02." }
+  if (!endDate) return { error: "The end date should look like 2026-10-02." }
+  var start, end
+  if (d.allDay) {
+    if (endDate < date) return { error: "The last day can't be before the first." }
+    start = date; end = addDays(endDate, 1)
+  } else {
+    var f = parseClock(d.from), t = parseClock(d.to)
+    if (f < 0) return { error: "The start time should look like 14:30 or 2:30pm." }
+    if (t < 0) return { error: "The end time should look like 15:30 or 3:30pm." }
+    // An end at or before the start on the same day means it runs past midnight.
+    if (endDate === date && t <= f) endDate = addDays(date, 1)
+    if (endDate < date) return { error: "The end can't be before the start." }
+    start = date + " " + clockInput(f); end = endDate + " " + clockInput(t)
+  }
+  var args
+  if (d.mode === "create") {
+    if (!d.calendar) return { error: "Pick a calendar." }
+    args = ["create", d.calendar, "--title", d.title, "--start", start, "--end", end]
+    if (d.allDay) args.push("--all-day")
+    if (d.location) args.push("--location", d.location)
+    var people = String(d.invite || "").split(/[\s,;]+/).filter(function(x) { return x })
+    for (var i = 0; i < people.length; i++) {
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(people[i])) return { error: people[i] + " isn't an email address." }
+      args.push("--invite", people[i])
+    }
+    return { args: args }
+  }
+  var o = d.original || {}
+  args = ["update", d.uid]
+  if (d.title !== o.title) args.push("--title", d.title)
+  if (d.location !== o.location) args.push("--location", d.location)
+  var timesChanged = d.allDay !== o.allDay || d.date !== o.date || d.endDate !== o.endDate
+                     || (!d.allDay && (d.from !== o.from || d.to !== o.to))
+  if (timesChanged) {
+    if (d.series) return { error: "A whole series can't be moved from here: untick it to move this one." }
+    args.push("--start", start, "--end", end, d.allDay ? "--all-day" : "--timed")
+  }
+  if (args.length === 2) return { args: [] }   // nothing changed
+  if (d.series) args.push("--series")
+  return { args: args }
+}
 
 if (typeof module !== "undefined") {
   module.exports = {

@@ -19,7 +19,7 @@ Item {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
 
-  signal openEvent(string url)
+  signal openEvent(var ev)
   signal joinEvent(string url)
   signal pickDay(string key)
 
@@ -147,7 +147,7 @@ Item {
             MouseArea {
               anchors.fill: parent
               cursorShape: Qt.PointingHandCursor
-              onClicked: grid.openEvent(parent.modelData.webLink)
+              onClicked: grid.openEvent(parent.modelData)
             }
           }
         }
@@ -300,7 +300,7 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: grid.openEvent(block.ev.webLink)
+                onClicked: grid.openEvent(block.ev)
               }
 
               Text {

@@ -83,7 +83,9 @@ def normalise(account, cal, e):
         "busy": e.get("showAs") not in ("free", "workingElsewhere"),
         "recurring": e.get("type") in ("occurrence", "exception"),
         "seriesId": e.get("seriesMasterId"),
-        "editable": cal["editable"],
+        # An attendee's copy can be changed in Outlook, but the change stays
+        # in that one mailbox: only the organiser's edits reach anyone.
+        "editable": cal["editable"] and organizer,
         "webLink": e.get("webLink", ""),
         "etag": e.get("@odata.etag") or e.get("changeKey", ""),
         # Outlook's reminder: on or off, and how long before the start.

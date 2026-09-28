@@ -10,6 +10,16 @@
     calendar-ctl choose               # pick them all at once, in a checklist
     calendar-ctl hide|show <account> <number or name>
     calendar-ctl remove <name>
+    calendar-ctl respond <uid> accept|tentative|decline [--series]
+    calendar-ctl create <account>/<calendar id> --title <t> --start <when> [--end <when>]
+                 [--all-day] [--location <text>] [--invite <email>]...
+    calendar-ctl update <uid> [--title <t>] [--start <when>] [--end <when>]
+                 [--all-day | --timed] [--location <text>] [--series]
+    calendar-ctl delete <uid> [--series]
+
+A uid is as in events.json. Times are local ("2026-10-02 14:30") unless they
+carry an offset; with --all-day they are dates, and the end is the day after
+the last (it defaults to one day, or one hour for a timed event).
 
 Secrets never touch disk here. Each account's refresh token (and, for Google,
 the OAuth client secret) is stored in the GNOME keyring through secret-tool,
@@ -142,6 +152,31 @@ def cmd_choose(show, acc, which):
     sync.main(["sync", "--quiet"])
 
 
+def event_options(args, cmd):
+    """--flag value pairs. A value is taken as it is, even if it starts with a
+    dash, so a title from anywhere can't turn into an option."""
+    opt, it = {}, iter(args)
+    names = {"--title": "title", "--start": "start", "--end": "end", "--location": "location"}
+    for x in it:
+        if x in names:
+            v = next(it, None)
+            if v is None:
+                die("%s needs a value" % x)
+            opt[names[x]] = v
+        elif x == "--invite":
+            v = next(it, None)
+            if not v or "@" not in v:
+                die("--invite needs an email address")
+            opt.setdefault("invite", []).append(v)
+        elif x in ("--all-day", "--timed"):
+            opt["all_day"] = x == "--all-day"
+        elif x == "--series":
+            opt["series"] = True
+        else:
+            die("usage: see calendar-ctl --help")
+    return opt
+
+
 def main(argv):
     if len(argv) < 2 or argv[1] in ("-h", "--help"):
         print(__doc__.strip())
@@ -165,6 +200,32 @@ def main(argv):
         cmd_pick()
     elif cmd in ("hide", "show") and len(args) == 2:
         cmd_choose(cmd == "show", *args)
+    elif cmd == "respond" and len(args) in (2, 3) and args[2:] in ([], ["--series"]):
+        from omcal import edit, sync
+        edit.respond(args[0], args[1], series=bool(args[2:]))
+        print("Answered %s." % args[1])
+        sync.main(["sync", "--quiet"])
+    elif cmd in ("create", "update") and args:
+        from omcal import edit, sync
+        opt = event_options(args[1:], cmd)
+        if cmd == "create":
+            if "start" not in opt:
+                die("create needs --start")
+            opt.setdefault("title", "")
+            opt["invite"] = opt.pop("invite", [])
+            opt.pop("series", None)
+            print(edit.create(args[0], **opt))
+        else:
+            if opt.pop("invite", None):
+                die("--invite is for create")
+            edit.update(args[0], **opt)
+            print("Saved.")
+        sync.main(["sync", "--quiet"])
+    elif cmd == "delete" and len(args) in (1, 2) and args[1:] in ([], ["--series"]):
+        from omcal import edit, sync
+        edit.delete(args[0], series=bool(args[1:]))
+        print("Deleted.")
+        sync.main(["sync", "--quiet"])
     elif cmd == "remove" and len(args) == 1:
         save_accounts([a for a in load_accounts() if a["name"] != args[0]])
         secret_clear(args[0])
@@ -176,5 +237,5 @@ def main(argv):
 if __name__ == "__main__":
     try:
         main(sys.argv)
-    except (AuthError, HttpError) as e:
+    except (AuthError, HttpError, RuntimeError) as e:
         die(str(e))

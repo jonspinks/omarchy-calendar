@@ -156,6 +156,29 @@ def get_json(url, token):
         raise HttpError(urllib.parse.urlsplit(url).netloc, e.code, e.read().decode(errors="replace")[:300])
 
 
+class Conflict(RuntimeError):
+    """The event changed elsewhere since it was read (HTTP 412): nothing was written."""
+
+
+def send_json(method, url, token, body=None, headers=None):
+    """A write to an API. Returns the reply's JSON, or None for an empty reply."""
+    h = {"Authorization": "Bearer " + token}
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        h["Content-Type"] = "application/json"
+    h.update(headers or {})
+    req = urllib.request.Request(url, data=data, headers=h, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            raw = r.read()
+            return json.loads(raw) if raw.strip() else None
+    except urllib.error.HTTPError as e:
+        if e.code == 412:
+            raise Conflict("the event was changed elsewhere; sync and try again")
+        raise HttpError(urllib.parse.urlsplit(url).netloc, e.code, e.read().decode(errors="replace")[:300])
+
+
 def token_error(t):
     return "%s: %s" % (t.get("error", "error"), t.get("error_description", "").splitlines()[0] if t.get("error_description") else "")
 

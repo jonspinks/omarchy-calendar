@@ -14,6 +14,7 @@ Files, all 0600 in a 0700 directory under $XDG_CACHE_HOME/blacksheep.calendar:
     events.json            what the widget reads: accounts, calendars, events
 """
 
+import contextlib
 import fcntl
 import json
 import os
@@ -169,6 +170,22 @@ def dedupe(events, calendars):
                           for e in group[1:]]
         out.append(keep)
     return out
+
+
+@contextlib.contextmanager
+def locked():
+    """Wait for any running sync, and hold the lock meanwhile."""
+    os.makedirs(RUNTIME, exist_ok=True)
+    with open(os.path.join(RUNTIME, APP + ".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def republish():
+    """events.json again from the state files as they are, without fetching."""
+    accounts = auth.load_accounts()
+    states = {a["name"]: read_json(os.path.join(CACHE, "state-%s.json" % a["name"]), {}) for a in accounts}
+    return publish(accounts, states)
 
 
 def main(argv):

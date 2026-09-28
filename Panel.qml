@@ -162,6 +162,102 @@ Panel {
     urlProc.running = true
   }
 
+  // ---- Writes (calendar-ctl, one at a time). The ctl patches the local copy
+  //      and syncs, so events.json changes and the panel follows by itself.
+  property string writingUid: ""
+
+  function respond(ev, answer, series) {
+    root.runWrite(ev.uid, ["respond", ev.uid, answer].concat(series ? ["--series"] : []))
+  }
+
+  // A write from the editor closes it when it lands; a failure is said in the
+  // editor if it is open, and in a notification otherwise.
+  function runWrite(uid, args) {
+    if (writeProc.running || !args.length) return
+    root.writingUid = uid || "new"
+    root.editorError = ""
+    writeProc.fromEditor = root.editorOpen
+    writeProc.command = [root.pluginDir + "/scripts/calendar-ctl"].concat(args)
+    writeProc.running = true
+  }
+
+  Process {
+    id: writeProc
+    property bool fromEditor: false
+    stderr: StdioCollector { id: writeErr; waitForEnd: true }
+    onExited: function(code) {
+      root.writingUid = ""
+      if (code === 0) {
+        if (fromEditor) root.closeEditor()
+        return
+      }
+      var msg = String(writeErr.text || "").trim().replace(/^calendar-ctl: /, "") || "the change wasn't made"
+      msg = msg.charAt(0).toUpperCase() + msg.slice(1)
+      if (fromEditor && root.editorOpen) {
+        root.editorError = msg
+        return
+      }
+      failProc.command = ["omarchy-notification-send", "-g", "󰃭", "-u", "normal", "--app-name", "Calendar",
+                          "Calendar: not saved", msg]
+      failProc.running = true
+    }
+  }
+
+  // ---- The event editor (EventEditor.qml). Open, the panel's own keys step
+  //      aside so typing goes into the fields.
+  property var draft: null
+  property var draftEvent: null
+  property string editorError: ""
+  readonly property bool editorOpen: draft !== null
+
+  readonly property var editableCalendars: {
+    var out = []
+    var cals = (root.eventData && root.eventData.calendars) || []
+    for (var i = 0; i < cals.length; i++) {
+      var c = cals[i]
+      if (c.shown && c.editable) out.push({ value: c.account + "/" + c.id, label: c.account + ": " + (c.name || c.id), primary: c.primary })
+    }
+    return out
+  }
+
+  function defaultCalendar() {
+    var saved = String(setting("defaultCalendar", "") || "")
+    var list = root.editableCalendars
+    for (var i = 0; i < list.length; i++) if (list[i].value === saved) return saved
+    for (var j = 0; j < list.length; j++) if (list[j].primary) return list[j].value
+    return list.length ? list[0].value : ""
+  }
+
+  function openEditor(ev) {
+    if (!ev || !ev.uid) return
+    root.editorError = ""
+    root.draftEvent = ev
+    root.draft = Model.eventDraft(ev)
+  }
+
+  function newEvent() {
+    root.editorError = ""
+    root.draftEvent = null
+    root.draft = Model.newDraft(root.selectedKey, new Date(), root.defaultCalendar())
+  }
+
+  function closeEditor() {
+    root.draft = null
+    root.draftEvent = null
+    root.editorError = ""
+    Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
+  }
+
+  function saveDraft(d) {
+    var out = Model.draftArgs(d)
+    if (out.error) { root.editorError = out.error; return }
+    if (!out.args.length) { root.closeEditor(); return }
+    if (d.mode === "create" && d.calendar !== setting("defaultCalendar", "")) persistSettings({ defaultCalendar: d.calendar })
+    root.runWrite(d.uid, out.args)
+  }
+
+  Process { id: failProc }
+
   function chooseCalendars() {
     termProc.command = ["omarchy-launch-floating-terminal-with-presentation",
                         root.pluginDir + "/scripts/calendar-ctl choose"]
@@ -333,6 +429,7 @@ Panel {
     // Dismissing the panel mid-edit would otherwise leave the inputs up,
     // waiting behind a closed popup for the next time it opens.
     if (root.editingLife) root.cancelEditingLife()
+    if (root.editorOpen && !writeProc.running) root.closeEditor()
     root.controller.hide()
   }
 
@@ -485,7 +582,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.editingLife
+      blocked: root.editingLife || root.editorOpen
       onMoveRequested: function(dx, dy) {
         if (dx !== 0) root.step(dx)
         if (dy !== 0 && root.viewMode === "month") root.moveYear(dy)
@@ -501,6 +598,7 @@ Panel {
         else if (t === "}") root.moveYear(1)
         else if (t === "t" || t === "T") root.goToToday()
         else if (t === "w" || t === "W") root.toggleWeekStart()
+        else if (t === "n" || t === "N") root.newEvent()
       }
 
       Flickable {
@@ -775,8 +873,35 @@ Panel {
             }
           }
 
+          // ---- One event, over the views while it is open.
+          EventEditor {
+            visible: root.editorOpen
+            width: Math.min(parent.width, Style.space(520))
+            anchors.horizontalCenter: parent.horizontalCenter
+            height: visible ? implicitHeight : 0
+            draft: root.draft
+            event: root.draftEvent
+            calendars: root.editableCalendars
+            busy: root.writingUid !== ""
+            error: root.editorError
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            onSave: function(d) { root.saveDraft(d) }
+            onCancel: root.closeEditor()
+            onRemove: function(series) {
+              root.runWrite(root.draftEvent.uid, ["delete", root.draftEvent.uid].concat(series ? ["--series"] : []))
+            }
+            onRespond: function(answer, series) {
+              root.editorError = ""
+              writeProc.fromEditor = true
+              root.runWrite(root.draftEvent.uid, ["respond", root.draftEvent.uid, answer].concat(series ? ["--series"] : []))
+            }
+            onOpenLink: function(url) { root.openUrl(url) }
+          }
+
           // ---- Which view. Keys 1 to 5 do the same.
           Item {
+            visible: !root.editorOpen
             width: parent.width
             height: viewSwitch.implicitHeight
 
@@ -795,7 +920,7 @@ Panel {
 
           // ---- Day, week and working week.
           TimeGrid {
-            visible: root.isTimeView
+            visible: root.isTimeView && !root.editorOpen
             width: Math.min(parent.width, Style.space(root.viewMode === "day" ? 520 : 880))
             anchors.horizontalCenter: parent.horizontalCenter
             height: implicitHeight
@@ -805,14 +930,14 @@ Panel {
             use24h: root.use24h
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
-            onOpenEvent: function(url) { root.openUrl(url) }
+            onOpenEvent: function(ev) { root.openEditor(ev) }
             onJoinEvent: function(url) { root.openUrl(url) }
             onPickDay: function(key) { root.openDay(key) }
           }
 
           // ---- The year.
           YearView {
-            visible: root.viewMode === "year"
+            visible: root.viewMode === "year" && !root.editorOpen
             width: parent.width
             height: implicitHeight
             yearNumber: Model.keyToDate(root.selectedKey).getFullYear()
@@ -828,7 +953,7 @@ Panel {
           //      the seven day columns. Always six rows, so the popup is
           //      exactly as tall in February as it is in August.
           Item {
-            visible: root.viewMode === "month"
+            visible: root.viewMode === "month" && !root.editorOpen
             width: parent.width
             height: gridColumn.y + gridColumn.height
 
@@ -1031,6 +1156,7 @@ Panel {
           //      The label is centered and fixed-width, so it holds still
           //      from "MAY" to "SEPTEMBER".
           Item {
+            visible: !root.editorOpen
             width: parent.width
             height: monthNav.height
 
@@ -1088,6 +1214,7 @@ Panel {
           //      own calendar app; a meeting gets a Join button. The time
           //      views show the events themselves, so they don't need it.
           Item {
+            visible: !root.editorOpen
             width: parent.width
             height: agenda.height
 
@@ -1150,8 +1277,8 @@ Panel {
                     id: rowMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    cursorShape: eventRow.modelData.webLink ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.openUrl(eventRow.modelData.webLink)
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openEditor(eventRow.modelData)
                   }
 
                   Column {
@@ -1183,6 +1310,37 @@ Panel {
                       color: Qt.darker(root.contentForeground, 1.5)
                       font.family: root.contentFontFamily
                       font.pixelSize: Style.font.bodySmall
+                    }
+
+                    // An invitation not yet answered for sure: answer it here.
+                    // A recurring one is answered for the whole series.
+                    Row {
+                      visible: !eventRow.modelData.organizer
+                               && (eventRow.modelData.response === "needsAction" || eventRow.modelData.response === "tentative")
+                      topPadding: Style.space(3)
+                      bottomPadding: Style.space(2)
+                      spacing: Style.space(4)
+
+                      Repeater {
+                        model: [
+                          { answer: "accept", label: "Accept", icon: "󰄬" },
+                          { answer: "tentative", label: "Maybe", icon: "󰋗" },
+                          { answer: "decline", label: "Decline", icon: "󰅖" }
+                        ]
+                        Button {
+                          required property var modelData
+                          visible: !(modelData.answer === "tentative" && eventRow.modelData.response === "tentative")
+                          enabled: root.writingUid === ""
+                          bordered: true
+                          iconText: modelData.icon
+                          text: root.writingUid === eventRow.modelData.uid ? "…" : modelData.label
+                          tooltipText: (eventRow.modelData.recurring ? "Every occurrence: " : "")
+                                       + modelData.label + " and let the organiser know"
+                          foreground: root.contentForeground
+                          fontFamily: root.contentFontFamily
+                          onClicked: root.respond(eventRow.modelData, modelData.answer, eventRow.modelData.recurring)
+                        }
+                      }
                     }
                   }
 
@@ -1246,6 +1404,16 @@ Panel {
               Row {
                 anchors.right: parent.right
                 spacing: Style.space(4)
+
+                Button {
+                  iconText: "󰐕"
+                  text: "New"
+                  tooltipText: "New event on this day (n)"
+                  visible: root.editableCalendars.length > 0
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  onClicked: root.newEvent()
+                }
 
                 Button {
                   iconText: "󰃭"

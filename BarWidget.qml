@@ -73,6 +73,14 @@ BarWidget {
     if (panelLoader.item) panelLoader.item.toggle()
   }
 
+  // Opens the panel on a new event: bindable to a key with
+  //   qs ipc -p /usr/share/omarchy/shell call blacksheep.calendar newEvent
+  function newEvent() {
+    if (!panelLoader.item) return
+    panelLoader.item.open()
+    panelLoader.item.newEvent()
+  }
+
   function toggleWeekStart() {
     if (panelLoader.item) panelLoader.item.toggleWeekStart()
   }
@@ -137,6 +145,7 @@ BarWidget {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.togglePanel() }
+    function newEvent(): void { root.newEvent() }
   }
 
   WidgetButton {
