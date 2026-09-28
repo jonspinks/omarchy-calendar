@@ -508,11 +508,14 @@ Item {
       font.pixelSize: Style.font.bodySmall
     }
 
+    // As tall as the taller side: an invitation has only a plain Close on the
+    // right, shorter than the boxed Join on the left.
     Item {
       width: parent.width
-      height: actions.height
+      height: Math.max(links.height, actions.height)
 
       Row {
+        id: links
         anchors.left: parent.left
         spacing: Style.space(6)
 
