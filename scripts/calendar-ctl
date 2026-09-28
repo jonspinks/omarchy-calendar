@@ -170,9 +170,9 @@ def cmd_guests(uid):
         return
     for g in e["guests"]:
         who = "%s <%s>" % (g["name"], g["email"]) if g["name"] and g["name"] != g["email"] else g["email"]
-        notes = [n for n, on in (("organiser", g["organizer"]), ("you", g["me"]), ("optional", g["optional"]),
+        notes = [n for n, on in (("you", g["me"]), ("optional", g["optional"]),
                                  ("room", g["room"])) if on]
-        print("  %-14s %s%s" % (GUEST_ANSWERS[g["response"]], who, "  (%s)" % ", ".join(notes) if notes else ""))
+        print("  %-14s %s%s" % ("organiser" if g["organizer"] else GUEST_ANSWERS[g["response"]], who, "  (%s)" % ", ".join(notes) if notes else ""))
     more = e.get("guestTotal", 0) - len(e["guests"])
     if more > 0:
         print("  ... and %d more" % more)

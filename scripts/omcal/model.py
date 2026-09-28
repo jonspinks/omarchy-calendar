@@ -81,6 +81,10 @@ EMAIL = re.compile(r"^[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[^@\s,;<>\"']+$")
 
 
 def guest(email, name="", response="needsAction", optional=False, organizer=False, me=False, room=False):
+    """One guest. The organiser is going to their own meeting, whatever the
+    provider says (Graph can list them among the guests as not answering)."""
+    if organizer:
+        response = "accepted"
     return {"email": email or "", "name": (name or "").strip(),
             "response": response if response in GUEST_ANSWERS else "needsAction",
             "optional": bool(optional), "organizer": bool(organizer), "me": bool(me), "room": bool(room)}

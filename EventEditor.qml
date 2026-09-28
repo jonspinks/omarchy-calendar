@@ -128,6 +128,7 @@ Item {
   }
 
   function answerIcon(row) {
+    if (row.response === "" && row.pending !== "add") return ""   // the organiser
     if (row.pending === "add") return "󰐕"
     return row.response === "accepted" ? "󰄬"
          : row.response === "tentative" ? "󰋗"
@@ -345,8 +346,9 @@ Item {
 
           Text {
             id: answerLabel
-            anchors.right: rowButton.visible ? rowButton.left : parent.right
-            anchors.rightMargin: Style.space(4)
+            // The answers line up whether or not a row can be taken off.
+            anchors.right: parent.right
+            anchors.rightMargin: editor.editable ? rowButton.implicitWidth + Style.space(4) : 0
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText
             text: guestRow.removing ? "Take off" : guestRow.modelData.answer

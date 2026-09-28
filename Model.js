@@ -801,6 +801,7 @@ function guestRemove(invited, uninvited, email) {
 var ANSWER_LABELS = { accepted: "Yes", tentative: "Maybe", declined: "No", needsAction: "Waiting" }
 
 // The rows the editor lists: each guest, with what this edit will do to them.
+// The organiser has no answer to show: it's their meeting.
 function guestRows(guests, invited, uninvited) {
   var rows = []
   for (var i = 0; i < (guests || []).length; i++) {
@@ -812,7 +813,8 @@ function guestRows(guests, invited, uninvited) {
     if (g.optional) tags.push("optional")
     if (g.room) tags.push("room")
     rows.push({ email: email, title: named ? g.name : email, detail: named ? email : "",
-                response: g.response, answer: ANSWER_LABELS[g.response] || "Waiting", tags: tags.join(", "),
+                response: g.organizer ? "" : g.response,
+                answer: g.organizer ? "" : ANSWER_LABELS[g.response] || "Waiting", tags: tags.join(", "),
                 fixed: !!g.organizer || !!g.me,
                 pending: (uninvited || []).indexOf(email.toLowerCase()) >= 0 ? "remove" : "" })
   }
@@ -822,11 +824,15 @@ function guestRows(guests, invited, uninvited) {
   return rows
 }
 
-// "5 guests · 3 yes, 1 maybe, 1 waiting"
+// "5 guests · 3 yes, 1 maybe, 1 waiting": the people invited, so not the
+// organiser, who has nothing to answer.
 function guestSummary(guests, total) {
-  var n = { accepted: 0, tentative: 0, declined: 0, needsAction: 0 }
-  for (var i = 0; i < (guests || []).length; i++) n[guests[i].response in n ? guests[i].response : "needsAction"]++
-  var count = Math.max(total || 0, (guests || []).length)
+  var n = { accepted: 0, tentative: 0, declined: 0, needsAction: 0 }, hosts = 0
+  for (var i = 0; i < (guests || []).length; i++) {
+    if (guests[i].organizer) { hosts++; continue }
+    n[guests[i].response in n ? guests[i].response : "needsAction"]++
+  }
+  var count = Math.max(total || 0, (guests || []).length) - hosts
   var parts = []
   if (n.accepted) parts.push(n.accepted + " yes")
   if (n.tentative) parts.push(n.tentative + " maybe")

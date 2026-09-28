@@ -1,10 +1,11 @@
 # Privacy policy: Datebook
 
-*Last updated: 27 September 2026*
+*Last updated: 28 September 2026*
 
 Datebook (Omarchy Calendar) is a desktop calendar for the Omarchy Linux desktop. It shows
 your Google Calendar and Microsoft 365 events in the desktop's calendar, sends
-meeting reminders, and lets you create, edit, delete and respond to events.
+meeting reminders, and lets you create, edit, delete and respond to events, and see and change who
+is invited.
 It is open source: everything it does is in this repository.
 
 ## What it accesses
@@ -33,7 +34,9 @@ directly to Google's and Microsoft's calendar APIs.
   Google or Microsoft app you signed in through) are kept in
   `~/.config/blacksheep.calendar/`, readable only by you.
 - **A copy of your events** is kept in your user cache, readable only by you,
-  so the calendar can show them instantly and work offline.
+  so the calendar can show them instantly and work offline. It includes each
+  event's guest list (names, email addresses and whether they've answered),
+  exactly as your calendar already shows it to you.
 
 Your calendar data is never sent to the developer, never shared with or sold
 to anyone, and never used for advertising, analytics or training.

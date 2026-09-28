@@ -84,8 +84,8 @@ const guests = [
   { email: "Bob@x.co", name: "Bob@x.co", response: "needsAction", organizer: false, me: false, optional: true, room: false },
   { email: "zed@x.co", name: "Zed", response: "declined", organizer: false, me: false, optional: false, room: false }
 ]
-eq(M.guestSummary(guests, 4), "4 guests · 1 yes, 1 maybe, 1 no, 1 waiting", "guests: summary")
-eq(M.guestSummary(guests.slice(0, 1), 150), "150 guests · 1 yes", "guests: summary counts the whole list")
+eq(M.guestSummary(guests, 4), "3 guests · 1 maybe, 1 no, 1 waiting", "guests: summary leaves the organiser out")
+eq(M.guestSummary(guests.slice(1, 2), 150), "150 guests · 1 maybe", "guests: summary counts the whole list")
 eq(M.parseAddresses("A@b.co; c@d.co  a@b.co"), { list: ["a@b.co", "c@d.co"] }, "guests: addresses split and deduped")
 eq(M.parseAddresses("a@b.co, <x@y.co>").error, "<x@y.co> isn't an email address.", "guests: bad address")
 eq(M.guestEdit(guests, [], [], "new@x.co"), { invited: ["new@x.co"], uninvited: [] }, "guests: add")
@@ -96,7 +96,7 @@ eq(M.guestRemove([], [], "Bob@x.co"), { invited: [], uninvited: ["bob@x.co"] }, 
 eq(M.guestRemove(["new@x.co"], [], "new@x.co"), { invited: [], uninvited: [] }, "guests: removing one just added forgets them")
 const rows = M.guestRows(guests, ["new@x.co"], ["bob@x.co"])
 eq(rows.map(r => [r.title, r.detail, r.answer, r.tags, r.fixed, r.pending]), [
-  ["Olive", "olive@x.co", "Yes", "organiser", true, ""],
+  ["Olive", "olive@x.co", "", "organiser", true, ""],
   ["me@x.co", "", "Maybe", "you", true, ""],
   ["Bob@x.co", "", "Waiting", "optional", false, "remove"],
   ["Zed", "zed@x.co", "No", "", false, ""],
