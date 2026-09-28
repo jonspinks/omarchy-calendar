@@ -86,6 +86,8 @@ def normalise(account, cal, e):
         "editable": cal["editable"],
         "webLink": e.get("webLink", ""),
         "etag": e.get("@odata.etag") or e.get("changeKey", ""),
+        # Outlook's reminder: on or off, and how long before the start.
+        "remind": [int(e.get("reminderMinutesBeforeStart") or 0)] if e.get("isReminderOn") else [],
     }
 
 

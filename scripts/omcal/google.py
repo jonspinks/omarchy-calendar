@@ -35,7 +35,10 @@ def calendars(tok):
                 continue
             out.append({"id": c["id"], "name": c.get("summaryOverride") or c.get("summary", ""),
                         "color": c.get("backgroundColor", ""), "primary": bool(c.get("primary")),
-                        "editable": c.get("accessRole") in ("owner", "writer")})
+                        "editable": c.get("accessRole") in ("owner", "writer"),
+                        # Popup reminders this calendar gives events that use its defaults.
+                        "defaultRemind": sorted({int(x["minutes"]) for x in c.get("defaultReminders", [])
+                                                 if x.get("method") == "popup" and "minutes" in x})})
         page = r.get("nextPageToken")
         if not page:
             return out
@@ -61,6 +64,12 @@ def normalise(account, cal, e):
         join = {"url": e["hangoutLink"], "kind": "meet"}
     if not join:
         join = find_join(e.get("location"), e.get("description"))
+    rem = e.get("reminders") or {}
+    if rem.get("useDefault", True):
+        remind = list(cal.get("defaultRemind", []))
+    else:
+        remind = sorted({int(x["minutes"]) for x in rem.get("overrides", [])
+                         if x.get("method") == "popup" and "minutes" in x})
     return {
         "uid": "%s/%s/%s" % (account, cal["id"], e["id"]),
         "account": account, "calendar": cal["id"],
@@ -77,6 +86,7 @@ def normalise(account, cal, e):
         "editable": cal["editable"] and (organizer or bool(e.get("guestsCanModify"))),
         "webLink": e.get("htmlLink", ""),
         "etag": e.get("etag", ""),
+        "remind": remind,
     }
 
 

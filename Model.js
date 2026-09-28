@@ -513,6 +513,65 @@ function busyLevel(events) {
 }
 
 
+// ---- Reminders.
+//
+// An event's own reminder wins (Google's popup reminders, Outlook's "remind me
+// N minutes before"). Many work meetings arrive with Outlook's reminder
+// switched off, so a timed meeting with a Join link and no reminder of its own
+// still gets one, FALLBACK_REMIND minutes before. A reminder the laptop slept
+// through still fires, but only until LATE_LIMIT minutes after the start.
+
+var FALLBACK_REMIND = 5
+var LATE_LIMIT = 10
+
+function reminderTimes(e) {
+  var r = (e.remind || []).slice()
+  if (r.length === 0 && !e.allDay && e.join) r = [FALLBACK_REMIND]
+  return r
+}
+
+function startMs(e) {
+  return e.allDay ? keyToDate(e.start).getTime() : new Date(e.start).getTime()
+}
+
+// Reminders that are due now and haven't fired: [{id, event, minutes}], where
+// minutes is how long until the start (negative once it has begun).
+function dueReminders(data, calendars, nowMs, fired) {
+  var due = []
+  var evs = (data && data.events) || []
+  for (var i = 0; i < evs.length; i++) {
+    var e = evs[i]
+    var cal = calendars[e.account + "/" + e.calendar]
+    if (!cal || !cal.shown || e.status === "cancelled" || e.response === "declined") continue
+    var start = startMs(e)
+    if (nowMs > start + LATE_LIMIT * 60000) continue
+    var times = reminderTimes(e)
+    // The latest reminder already due is the one worth showing; earlier ones
+    // for the same event are marked as fired alongside it.
+    var best = null
+    for (var t = 0; t < times.length; t++) {
+      var at = start - times[t] * 60000
+      var id = e.uid + "@" + at
+      if (nowMs >= at && !fired[id] && (best === null || at > best.at)) best = { id: id, at: at }
+    }
+    if (best) due.push({ id: best.id, event: e, minutes: Math.round((start - nowMs) / 60000),
+                         also: times.map(function(m) { return e.uid + "@" + (start - m * 60000) }) })
+  }
+  return due
+}
+
+function reminderText(r, calName, use24h) {
+  var e = r.event
+  var when = r.minutes > 1 ? "in " + r.minutes + " min"
+           : r.minutes >= -1 ? "starting now"
+           : "started " + (-r.minutes) + " min ago"
+  var time = e.allDay ? "All day" : clockLabel(new Date(e.start), use24h) + " – " + clockLabel(new Date(e.end), use24h)
+  var how = e.join ? " · click to join " + ({teams: "Teams", zoom: "Zoom", meet: "Meet", webex: "Webex"}[e.join.kind] || "the meeting")
+                   : (e.webLink ? " · click to open" : "")
+  return { headline: e.title, body: when + " · " + time + " · " + calName + how }
+}
+
+
 if (typeof module !== "undefined") {
   module.exports = {
     dateKey: dateKey,
@@ -548,6 +607,9 @@ if (typeof module !== "undefined") {
     rangeTitle: rangeTitle,
     dayLayout: dayLayout,
     hourRange: hourRange,
-    busyLevel: busyLevel
+    busyLevel: busyLevel,
+    reminderTimes: reminderTimes,
+    dueReminders: dueReminders,
+    reminderText: reminderText
   }
 }

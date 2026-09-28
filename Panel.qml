@@ -137,9 +137,12 @@ Panel {
     root.showSelectedMonth()
   }
 
+  property var eventData: null
+
   function ingest(text) {
     try {
-      root.eventIndex = Model.indexEvents(JSON.parse(text), root.use24h)
+      root.eventData = JSON.parse(text)
+      root.eventIndex = Model.indexEvents(root.eventData, root.use24h)
     } catch (e) {
       // A half-written file can't happen (the sync renames into place), so a
       // parse error means a damaged cache: keep what is on screen.
@@ -186,6 +189,67 @@ Panel {
   Process {
     id: syncProc
     command: [root.pluginDir + "/scripts/calendar-sync", "--quiet"]
+  }
+
+  // ---- Reminders (see Model.dueReminders). What has fired is kept in the
+  //      runtime directory, so a shell reload never repeats a reminder, and a
+  //      reboot starts clean.
+  readonly property bool remindersOn: setting("reminders", true) !== false
+  property var fired: ({})
+  property bool firedLoaded: false
+  property var notifyQueue: []
+
+  FileView {
+    id: firedFile
+    path: (Quickshell.env("XDG_RUNTIME_DIR") || (root.home + "/.cache")) + "/blacksheep.calendar-reminded.json"
+    printErrors: false
+    onLoaded: {
+      try { root.fired = JSON.parse(text()) || {} } catch (e) { root.fired = {} }
+      root.firedLoaded = true
+    }
+    onLoadFailed: root.firedLoaded = true
+  }
+
+  function checkReminders() {
+    if (!root.remindersOn || !root.eventData || !root.firedLoaded) return
+    var now = Date.now()
+    var due = Model.dueReminders(root.eventData, root.eventIndex.calendars, now, root.fired)
+    if (!due.length) return
+    var fired = root.fired
+    for (var i = 0; i < due.length; i++) {
+      for (var j = 0; j < due[i].also.length; j++) fired[due[i].also[j]] = now
+      var cal = root.eventIndex.calendars[due[i].event.account + "/" + due[i].event.calendar] || {}
+      var text = Model.reminderText(due[i], cal.name || due[i].event.account, root.use24h)
+      var url = due[i].event.join ? due[i].event.join.url : due[i].event.webLink
+      var cmd = ["omarchy-notification-send", "-g", "󰃭", "-u", "normal", "--app-name", "Calendar", text.headline, text.body]
+      if (/^https:\/\//.test(String(url || ""))) cmd = cmd.concat(["--exec", "xdg-open", String(url)])
+      root.notifyQueue = root.notifyQueue.concat([cmd])
+    }
+    // Forget anything fired over a day ago: the file stays small.
+    for (var id in fired) if (now - fired[id] > 86400000) delete fired[id]
+    root.fired = fired
+    firedFile.setText(JSON.stringify(fired))
+    root.sendNext()
+  }
+
+  function sendNext() {
+    if (notifyProc.running || !root.notifyQueue.length) return
+    notifyProc.command = root.notifyQueue[0]
+    root.notifyQueue = root.notifyQueue.slice(1)
+    notifyProc.running = true
+  }
+
+  Process {
+    id: notifyProc
+    onExited: root.sendNext()
+  }
+
+  Timer {
+    interval: 20000
+    running: true
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.checkReminders()
   }
 
   Process { id: urlProc }

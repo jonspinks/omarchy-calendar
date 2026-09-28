@@ -21,6 +21,7 @@ A normalised event:
     editable     True when this account can change the event
     webLink      the event in the provider's own web app, or ""
     etag         the provider's version stamp, for safe edits later
+    remind       minutes before the start to pop up a reminder, e.g. [10]; [] for none
 
 Both providers are asked for end-exclusive all-day dates, and timed events are
 kept as UTC instants: local time is applied only when something is displayed,
