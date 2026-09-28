@@ -1,20 +1,9 @@
-#!/usr/bin/env python3
-"""Omarchy Calendar: account sign-in and a read test (phase 0).
-
-    calendar-ctl add-google <name> <client_secret.json>
-    calendar-ctl add-microsoft <name> --tenant <tenant-id> --client-id <app-id>
-    calendar-ctl list
-    calendar-ctl test <name>          # the next five events, to prove access
-    calendar-ctl remove <name>
+"""Accounts, the keyring, and signing in to Google and Microsoft 365.
 
 Secrets never touch disk here. Each account's refresh token (and, for Google,
 the OAuth client secret) is stored in the GNOME keyring through secret-tool,
 under service=blacksheep.calendar account=<name>. The config file holds only
 what is not secret: names, providers, tenant and client IDs.
-
-Google signs in through the browser (installed-app flow with PKCE, redirected
-to a one-shot listener on 127.0.0.1). Microsoft uses the device-code flow: no
-listener, no browser redirect, and nothing to paste but a short code.
 """
 
 import base64
@@ -30,7 +19,19 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+
+
+class AuthError(Exception):
+    """A saved sign-in no longer works: the account needs adding again."""
+
+
+class HttpError(RuntimeError):
+    """An API answered with an HTTP error; .code is the status."""
+
+    def __init__(self, host, code, detail=""):
+        super().__init__("%s answered HTTP %s%s" % (host, code, ": " + detail if detail else ""))
+        self.code = code
+
 
 APP = "blacksheep.calendar"
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), APP)
@@ -86,14 +87,16 @@ def secret_store(name, data):
          "service", APP, "account", name],
         input=json.dumps(data), text=True, capture_output=True)
     if p.returncode != 0:
-        die("could not save to the keyring: " + (p.stderr.strip() or "secret-tool failed"))
+        # Raised, not fatal: the sync saves Microsoft's rotated tokens with nobody
+        # at the keyboard, and a locked keyring must fail that account alone.
+        raise AuthError("could not save to the keyring: " + (p.stderr.strip() or "secret-tool failed"))
 
 
 def secret_load(name):
     p = subprocess.run(["secret-tool", "lookup", "service", APP, "account", name],
                        text=True, capture_output=True)
     if p.returncode != 0 or not p.stdout:
-        die("no saved sign-in for %r; add the account again" % name)
+        raise AuthError("no saved sign-in for %r" % name)
     return json.loads(p.stdout)
 
 
@@ -103,6 +106,12 @@ def secret_clear(name):
 
 
 # ------------------------------------------------------------------ HTTP
+
+def save_account(entry):
+    accounts = [a for a in load_accounts() if a["name"] != entry["name"]]
+    accounts.append(entry)
+    save_accounts(accounts)
+
 
 def post_form(url, fields):
     req = urllib.request.Request(url, data=urllib.parse.urlencode(fields).encode(),
@@ -114,7 +123,7 @@ def post_form(url, fields):
         try:
             return json.load(e)
         except Exception:
-            die("%s answered HTTP %s" % (urllib.parse.urlsplit(url).netloc, e.code))
+            raise HttpError(urllib.parse.urlsplit(url).netloc, e.code)
 
 
 def get_json(url, token):
@@ -123,8 +132,7 @@ def get_json(url, token):
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
-        body = e.read().decode(errors="replace")[:400]
-        die("%s answered HTTP %s: %s" % (urllib.parse.urlsplit(url).netloc, e.code, body))
+        raise HttpError(urllib.parse.urlsplit(url).netloc, e.code, e.read().decode(errors="replace")[:300])
 
 
 def token_error(t):
@@ -197,7 +205,7 @@ def google_access(a):
     t = post_form(GOOGLE_TOKEN, {"client_id": a["clientId"], "client_secret": s["client_secret"],
                                  "refresh_token": s["refresh_token"], "grant_type": "refresh_token"})
     if "access_token" not in t:
-        die("Google refused the saved sign-in (%s): add the account again" % token_error(t))
+        raise AuthError("Google refused the saved sign-in (%s)" % token_error(t))
     return t["access_token"]
 
 
@@ -246,72 +254,9 @@ def ms_access(a):
         "client_id": a["clientId"], "refresh_token": s["refresh_token"],
         "grant_type": "refresh_token", "scope": MS_SCOPES})
     if "access_token" not in t:
-        die("Microsoft refused the saved sign-in (%s): add the account again" % token_error(t))
+        raise AuthError("Microsoft refused the saved sign-in (%s)" % token_error(t))
     # Microsoft rotates refresh tokens: keep the newest one.
     if t.get("refresh_token") and t["refresh_token"] != s["refresh_token"]:
         s["refresh_token"] = t["refresh_token"]
         secret_store(a["name"], s)
     return t["access_token"]
-
-
-# -------------------------------------------------------------- commands
-
-def save_account(entry):
-    accounts = [a for a in load_accounts() if a["name"] != entry["name"]]
-    accounts.append(entry)
-    save_accounts(accounts)
-
-
-def cmd_test(name):
-    a = account(name)
-    now = datetime.now(timezone.utc)
-    rows = []
-    if a["provider"] == "google":
-        tok = google_access(a)
-        q = urllib.parse.urlencode({"timeMin": now.isoformat(), "singleEvents": "true",
-                                    "orderBy": "startTime", "maxResults": 5})
-        for e in get_json("https://www.googleapis.com/calendar/v3/calendars/primary/events?" + q, tok).get("items", []):
-            st = e.get("start", {})
-            rows.append((st.get("dateTime") or st.get("date", ""), e.get("summary", "(no title)"),
-                         "Meet" if e.get("hangoutLink") else ""))
-    else:
-        tok = ms_access(a)
-        q = urllib.parse.urlencode({"startDateTime": now.isoformat(),
-                                    "endDateTime": (now + timedelta(days=30)).isoformat(),
-                                    "$top": 5, "$orderby": "start/dateTime",
-                                    "$select": "subject,start,isOnlineMeeting,onlineMeetingProvider"})
-        for e in get_json("https://graph.microsoft.com/v1.0/me/calendarView?" + q, tok).get("value", []):
-            rows.append((e["start"]["dateTime"][:16] + " " + e["start"].get("timeZone", ""),
-                         e.get("subject") or "(no title)",
-                         "Teams" if e.get("isOnlineMeeting") else ""))
-    print("%s (%s): read access works.\n" % (name, a.get("email", "")))
-    if not rows:
-        print("  (no upcoming events)")
-    for when, title, link in rows:
-        print("  %-28s %s%s" % (when[:28], title, "  [" + link + "]" if link else ""))
-
-
-def main(argv):
-    if len(argv) < 2 or argv[1] in ("-h", "--help"):
-        print(__doc__.strip())
-        return
-    cmd, args = argv[1], argv[2:]
-    if cmd == "add-google" and len(args) == 2:
-        add_google(*args)
-    elif cmd == "add-microsoft" and len(args) == 5 and args[1] == "--tenant" and args[3] == "--client-id":
-        add_microsoft(args[0], args[2], args[4])
-    elif cmd == "list" and not args:
-        for a in load_accounts():
-            print("%-16s %-10s %s" % (a["name"], a["provider"], a.get("email", "")))
-    elif cmd == "test" and len(args) == 1:
-        cmd_test(args[0])
-    elif cmd == "remove" and len(args) == 1:
-        save_accounts([a for a in load_accounts() if a["name"] != args[0]])
-        secret_clear(args[0])
-        print("Removed %s." % args[0])
-    else:
-        die("usage: see calendar-ctl --help")
-
-
-if __name__ == "__main__":
-    main(sys.argv)

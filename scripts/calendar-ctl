@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Omarchy Calendar: account sign-in and a read test (phase 0).
+
+    calendar-ctl add-google <name> <client_secret.json>
+    calendar-ctl add-microsoft <name> --tenant <tenant-id> --client-id <app-id>
+    calendar-ctl list
+    calendar-ctl test <name>          # the next five events, to prove access
+    calendar-ctl sync [--full]        # bring the local copy up to date
+    calendar-ctl remove <name>
+
+Secrets never touch disk here. Each account's refresh token (and, for Google,
+the OAuth client secret) is stored in the GNOME keyring through secret-tool,
+under service=blacksheep.calendar account=<name>. The config file holds only
+what is not secret: names, providers, tenant and client IDs.
+
+Google signs in through the browser (installed-app flow with PKCE, redirected
+to a one-shot listener on 127.0.0.1). Microsoft uses the device-code flow: no
+listener, no browser redirect, and nothing to paste but a short code.
+"""
+
+import os
+import sys
+import urllib.parse
+from datetime import datetime, timedelta, timezone
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from omcal.auth import *  # noqa: E402,F401,F403
+from omcal.auth import AuthError, HttpError  # noqa: E402
+
+# -------------------------------------------------------------- commands
+
+def cmd_test(name):
+    a = account(name)
+    now = datetime.now(timezone.utc)
+    rows = []
+    if a["provider"] == "google":
+        tok = google_access(a)
+        q = urllib.parse.urlencode({"timeMin": now.isoformat(), "singleEvents": "true",
+                                    "orderBy": "startTime", "maxResults": 5})
+        for e in get_json("https://www.googleapis.com/calendar/v3/calendars/primary/events?" + q, tok).get("items", []):
+            st = e.get("start", {})
+            rows.append((st.get("dateTime") or st.get("date", ""), e.get("summary", "(no title)"),
+                         "Meet" if e.get("hangoutLink") else ""))
+    else:
+        tok = ms_access(a)
+        q = urllib.parse.urlencode({"startDateTime": now.isoformat(),
+                                    "endDateTime": (now + timedelta(days=30)).isoformat(),
+                                    "$top": 5, "$orderby": "start/dateTime",
+                                    "$select": "subject,start,isOnlineMeeting,onlineMeetingProvider"})
+        for e in get_json("https://graph.microsoft.com/v1.0/me/calendarView?" + q, tok).get("value", []):
+            rows.append((e["start"]["dateTime"][:16] + " " + e["start"].get("timeZone", ""),
+                         e.get("subject") or "(no title)",
+                         "Teams" if e.get("isOnlineMeeting") else ""))
+    print("%s (%s): read access works.\n" % (name, a.get("email", "")))
+    if not rows:
+        print("  (no upcoming events)")
+    for when, title, link in rows:
+        print("  %-28s %s%s" % (when[:28], title, "  [" + link + "]" if link else ""))
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] in ("-h", "--help"):
+        print(__doc__.strip())
+        return
+    cmd, args = argv[1], argv[2:]
+    if cmd == "add-google" and len(args) == 2:
+        add_google(*args)
+    elif cmd == "add-microsoft" and len(args) == 5 and args[1] == "--tenant" and args[3] == "--client-id":
+        add_microsoft(args[0], args[2], args[4])
+    elif cmd == "list" and not args:
+        for a in load_accounts():
+            print("%-16s %-10s %s" % (a["name"], a["provider"], a.get("email", "")))
+    elif cmd == "test" and len(args) == 1:
+        cmd_test(args[0])
+    elif cmd == "sync" and all(x in ("--full", "--quiet") for x in args):
+        from omcal import sync
+        sys.exit(sync.main(["sync"] + args))
+    elif cmd == "remove" and len(args) == 1:
+        save_accounts([a for a in load_accounts() if a["name"] != args[0]])
+        secret_clear(args[0])
+        print("Removed %s." % args[0])
+    else:
+        die("usage: see calendar-ctl --help")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv)
+    except (AuthError, HttpError) as e:
+        die(str(e))
