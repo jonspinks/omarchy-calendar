@@ -102,7 +102,9 @@ def cmd_pick():
               for i, (acc, cid, name, shown, editable, n) in enumerate(rows)]
     selected = [l for l, r in zip(labels, rows) if r[3]]
     p = subprocess.run(["gum", "choose", "--no-limit", "--height", str(min(len(rows) + 2, 30)),
-                        "--header", "Calendars to show  (space: toggle, enter: save, esc: cancel)",
+                        # gum 2.0 toggles with x or tab; space does nothing.
+                        "--header", "Calendars to show   x or tab: toggle   enter: save   esc: cancel",
+                        "--show-help",
                         "--selected", ",".join(selected)] + labels,
                        stdout=subprocess.PIPE, text=True)
     if p.returncode != 0:
