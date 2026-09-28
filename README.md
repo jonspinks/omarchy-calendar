@@ -174,6 +174,10 @@ it. Every change you make is written straight to the provider, guarded by the
 event's etag, then applied to the local copy at once, before the next sync
 confirms it. Times are kept in UTC, and only turned into local time on screen.
 
+`tests/run.sh` runs the tests: the widget's date, editing, reminder and
+"next up" logic under node, and the sync's link-finding, time parsing and
+de-duplication under Python.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Parts of the panel are derived from Omarchy's
