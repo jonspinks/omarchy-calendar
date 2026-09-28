@@ -960,6 +960,7 @@ Panel {
             height: visible ? implicitHeight : 0
             draft: root.modern ? null : root.draft
             event: root.draftEvent
+            showGuests: false
             calendars: root.editableCalendars
             saving: root.writingUid !== ""
             error: root.editorError

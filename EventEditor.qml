@@ -18,6 +18,9 @@ Item {
   property var event: null          // the row it came from, or null for a new one
   property var calendars: []        // [{ value: "<account>/<id>", label }], editable ones
   property bool saving: false
+  // The compact layout has no room for a guest list: it's shown only in the
+  // expanded one.
+  property bool showGuests: true
   property string error: ""
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
@@ -270,7 +273,7 @@ Item {
 
     // ---- Who's invited, and what they said.
     Column {
-      visible: !editor.creating && (editor.hasGuests || editor.editable)
+      visible: editor.showGuests && !editor.creating && (editor.hasGuests || editor.editable)
       width: parent.width
       spacing: Style.space(4)
 
