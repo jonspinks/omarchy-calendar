@@ -109,6 +109,15 @@ Item {
         onClicked: layout.p.syncNow()
       }
 
+      PanelActionButton {
+        anchors.verticalCenter: parent.verticalCenter
+        iconText: "󰊔"
+        tooltipText: "Compact: Omarchy's month and the day's appointments"
+        foreground: layout.fg
+        fontFamily: layout.fontName
+        onClicked: layout.p.setLayout(false)
+      }
+
       Button {
         anchors.verticalCenter: parent.verticalCenter
         visible: layout.p && layout.p.editableCalendars.length > 0

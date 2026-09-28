@@ -109,7 +109,7 @@ Panel {
     { label: "Year", value: "year", tooltip: "Twelve months (5)" }
   ]
   property string viewMode: Model.VIEWS.indexOf(String(setting("view", "month"))) >= 0 ? String(setting("view", "month")) : "month"
-  readonly property bool isTimeView: viewMode === "day" || viewMode === "week" || viewMode === "workweek"
+  readonly property bool isTimeView: modern && (viewMode === "day" || viewMode === "week" || viewMode === "workweek")
 
   function setView(v) {
     if (Model.VIEWS.indexOf(v) < 0 || v === root.viewMode) return
@@ -120,7 +120,7 @@ Panel {
 
   // Previous and Next: a month in the month view, otherwise the view's own unit.
   function step(delta) {
-    if (root.viewMode === "month") { root.moveMonth(delta); return }
+    if (root.viewMode === "month" || !root.modern) { root.moveMonth(delta); return }
     root.selectedKey = Model.stepAnchor(root.viewMode, root.selectedKey, delta)
     root.showSelectedMonth()
   }
@@ -132,7 +132,17 @@ Panel {
   }
 
   // The app layout (ModernLayout.qml) unless the setting asks for the stock one.
+  // Compact is Omarchy's own panel: the month, and the selected day's
+  // appointments under it. The header's collapse button goes there, and its
+  // expand button (or keys 1 to 5) comes back.
   readonly property bool modern: String(setting("layout", "modern")) !== "classic"
+
+  function setLayout(expanded) {
+    if (expanded === root.modern) return
+    if (root.editorOpen && !writeProc.running) root.closeEditor()
+    if (!expanded) root.showSelectedMonth()
+    persistSettings({ layout: expanded ? "modern" : "classic" })
+  }
   readonly property bool syncing: syncProc.running
 
   function pickDay(key) {
@@ -610,7 +620,7 @@ Panel {
     // The app layout takes what the screen allows, up to a comfortable size;
     // the stock one is sized by its content.
     contentWidth: root.modern ? panel.fittedContentWidth(Style.space(1240))
-                : panel.fittedContentWidth(Style.space(root.viewMode === "week" || root.viewMode === "workweek" ? 900 : 560))
+                : panel.fittedContentWidth(Style.space(560))
     contentHeight: root.modern ? panel.fittedContentHeight(Style.space(780))
                  : panel.fittedContentHeight(calendarColumn.implicitHeight)
 
@@ -620,13 +630,13 @@ Panel {
       blocked: root.editingLife || root.editorOpen
       onMoveRequested: function(dx, dy) {
         if (dx !== 0) root.step(dx)
-        if (dy !== 0 && root.viewMode === "month") root.moveYear(dy)
+        if (dy !== 0 && (root.viewMode === "month" || !root.modern)) root.moveYear(dy)
       }
       onActivateRequested: root.goToToday()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
-        if (t >= "1" && t <= "5") root.setView(Model.VIEWS[Number(t) - 1])
+        if (t >= "1" && t <= "5") { root.setView(Model.VIEWS[Number(t) - 1]); root.setLayout(true) }
         else if (t === "[") root.step(-1)
         else if (t === "]") root.step(1)
         else if (t === "{") root.moveYear(-1)
@@ -718,6 +728,16 @@ Panel {
                 text: "Back to today"
                 fontFamily: root.contentFontFamily
               }
+            }
+
+            PanelActionButton {
+              anchors.right: parent.right
+              anchors.top: parent.top
+              iconText: "󰊓"
+              tooltipText: "Expand: week, month and year views, and your calendars"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              onClicked: root.setLayout(true)
             }
           }
 
@@ -935,9 +955,10 @@ Panel {
             onOpenLink: function(url) { root.openUrl(url) }
           }
 
-          // ---- Which view. Keys 1 to 5 do the same.
+          // ---- Which view: only in the expanded layout now (keys 1 to 5
+          //      expand into one).
           Item {
-            visible: !root.editorOpen
+            visible: false
             width: parent.width
             height: viewSwitch.implicitHeight
 
@@ -973,7 +994,7 @@ Panel {
 
           // ---- The year.
           YearView {
-            visible: root.viewMode === "year" && !root.editorOpen
+            visible: false
             width: parent.width
             height: implicitHeight
             yearNumber: Model.keyToDate(root.selectedKey).getFullYear()
@@ -991,7 +1012,7 @@ Panel {
           //      the seven day columns. Always six rows, so the popup is
           //      exactly as tall in February as it is in August.
           Item {
-            visible: root.viewMode === "month" && !root.editorOpen
+            visible: !root.editorOpen
             width: parent.width
             height: gridColumn.y + gridColumn.height
 
@@ -1211,9 +1232,9 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 // Fixed width so the chevrons hold still between a
                 // "MAY 2026" and a "SEPTEMBER 2026".
-                width: Style.space(root.viewMode === "month" ? 130 : 320)
+                width: Style.space(root.viewMode === "month" || !root.modern ? 130 : 320)
                 horizontalAlignment: Text.AlignHCenter
-                text: (root.viewMode === "month"
+                text: (root.viewMode === "month" || !root.modern
                   ? Qt.formatDate(root.viewDate, "MMMM yyyy")
                   : Model.rangeTitle(root.viewMode, root.selectedKey, root.weekStart)).toUpperCase()
                 color: Qt.darker(root.contentForeground, 1.4)
