@@ -7,6 +7,7 @@
     calendar-ctl test <name>          # the next five events, to prove access
     calendar-ctl sync [--full]        # bring the local copy up to date
     calendar-ctl calendars            # every calendar, and which are shown
+    calendar-ctl choose               # pick them all at once, in a checklist
     calendar-ctl hide|show <account> <number or name>
     calendar-ctl remove <name>
 
@@ -86,6 +87,42 @@ def cmd_calendars():
     print("\ncalendar-ctl hide|show <account> <number or name>")
 
 
+def cmd_pick():
+    """Every calendar in one checklist (gum), ticked if shown; saves the lot."""
+    import shutil
+    import subprocess
+    rows = known_calendars()
+    if not rows:
+        die("no calendars yet: run calendar-ctl sync first")
+    if not shutil.which("gum"):
+        die("the picker needs gum (omarchy pkg add gum); or use calendar-ctl hide|show")
+    # gum returns the chosen labels, and splits --selected on commas, so each
+    # label carries its row number and no commas of its own.
+    labels = ["%2d  %s · %s%s" % (i + 1, acc, name.replace(",", " "), "" if editable else "  (read-only)")
+              for i, (acc, cid, name, shown, editable, n) in enumerate(rows)]
+    selected = [l for l, r in zip(labels, rows) if r[3]]
+    p = subprocess.run(["gum", "choose", "--no-limit", "--height", str(min(len(rows) + 2, 30)),
+                        "--header", "Calendars to show  (space: toggle, enter: save, esc: cancel)",
+                        "--selected", ",".join(selected)] + labels,
+                       stdout=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        print("Nothing changed.")
+        return
+    chosen = {int(line.split()[0]) - 1 for line in p.stdout.splitlines() if line.strip()}
+    hidden = {}
+    for i, (acc, cid, name, shown, editable, n) in enumerate(rows):
+        if i not in chosen:
+            hidden.setdefault(acc, set()).add(cid)
+    before = hidden_calendars()
+    if {k: v for k, v in before.items() if v} == hidden:
+        print("Nothing changed.")
+        return
+    save_hidden(hidden)
+    print("Showing %d of %d calendars. Syncing..." % (len(chosen), len(rows)))
+    from omcal import sync
+    sync.main(["sync", "--quiet"])
+
+
 def cmd_choose(show, acc, which):
     rows = [r for r in known_calendars() if r[0] == acc]
     if not rows:
@@ -122,6 +159,8 @@ def main(argv):
         sys.exit(sync.main(["sync"] + args))
     elif cmd == "calendars" and not args:
         cmd_calendars()
+    elif cmd == "choose" and not args:
+        cmd_pick()
     elif cmd in ("hide", "show") and len(args) == 2:
         cmd_choose(cmd == "show", *args)
     elif cmd == "remove" and len(args) == 1:
