@@ -197,7 +197,6 @@ Panel {
   readonly property bool remindersOn: setting("reminders", true) !== false
   property var fired: ({})
   property bool firedLoaded: false
-  property var notifyQueue: []
 
   FileView {
     id: firedFile
@@ -210,38 +209,85 @@ Panel {
     onLoadFailed: root.firedLoaded = true
   }
 
+  readonly property int snoozeMinutes: 5
+  property date clockNow: new Date()
+
   function checkReminders() {
     if (!root.remindersOn || !root.eventData || !root.firedLoaded) return
     var now = Date.now()
-    var due = Model.dueReminders(root.eventData, root.eventIndex.calendars, now, root.fired)
-    if (!due.length) return
     var fired = root.fired
+    var due = Model.dueReminders(root.eventData, root.eventIndex.calendars, now, fired)
     for (var i = 0; i < due.length; i++) {
       for (var j = 0; j < due[i].also.length; j++) fired[due[i].also[j]] = now
-      var cal = root.eventIndex.calendars[due[i].event.account + "/" + due[i].event.calendar] || {}
-      var text = Model.reminderText(due[i], cal.name || due[i].event.account, root.use24h)
-      var url = due[i].event.join ? due[i].event.join.url : due[i].event.webLink
-      var cmd = ["omarchy-notification-send", "-g", "󰃭", "-u", "normal", "--app-name", "Calendar", text.headline, text.body]
-      if (/^https:\/\//.test(String(url || ""))) cmd = cmd.concat(["--exec", "xdg-open", String(url)])
-      root.notifyQueue = root.notifyQueue.concat([cmd])
+      fired["shown:" + due[i].event.uid] = now
+      root.notify(due[i])
     }
-    // Forget anything fired over a day ago: the file stays small.
+    // Snoozed reminders come back once their time is up, while the event runs.
+    var snoozed = Model.dueSnoozes(root.eventData, fired, now)
+    for (var k = 0; k < snoozed.length; k++) {
+      delete fired["snooze:" + snoozed[k].event.uid]
+      fired["shown:" + snoozed[k].event.uid] = now
+      root.notify(snoozed[k])
+    }
+    if (!due.length && !snoozed.length) return
+    // Forget anything over a day old: the file stays small.
+    // (A pending snooze is in the future, so it always stays.)
     for (var id in fired) if (now - fired[id] > 86400000) delete fired[id]
-    root.fired = fired
+    root.saveFired(fired)
+  }
+
+  function saveFired(fired) {
+    root.fired = Object.assign({}, fired)
     firedFile.setText(JSON.stringify(fired))
-    root.sendNext()
   }
 
-  function sendNext() {
-    if (notifyProc.running || !root.notifyQueue.length) return
-    notifyProc.command = root.notifyQueue[0]
-    root.notifyQueue = root.notifyQueue.slice(1)
-    notifyProc.running = true
+  // One process per reminder: notify-send -A waits for the button pressed,
+  // and one reminder waiting must never hold up the next.
+  //
+  // The title and body come from invitations anyone can send, so "--" ends
+  // notify-send's options before them: a title like "--hint=..." or "-u" is
+  // then only ever text (the reason omarchy-notification-send avoids
+  // notify-send altogether). The glyph is a hint, as Omarchy sends it.
+  function notify(r) {
+    var e = r.event
+    var cal = root.eventIndex.calendars[e.account + "/" + e.calendar] || {}
+    var text = Model.reminderText(r, cal.name || e.account, root.use24h)
+    var url = e.join ? e.join.url : e.webLink
+    var args = ["notify-send", "--app-name=Calendar", "--urgency=normal",
+                "--hint=string:omarchy-glyph:󰃭",
+                "--action=snooze=Snooze " + root.snoozeMinutes + " min"]
+    if (/^https:\/\//.test(String(url || "")))
+      // The exec hint is what Omarchy runs on a click, and it survives into
+      // the notification history; "default" is for other servers.
+      args = args.concat(["--hint=string:omarchy-exec-argv:" + JSON.stringify(["xdg-open", String(url)]),
+                          "--action=default=" + (e.join ? "Join" : "Open")])
+    args = args.concat(["--", text.headline, text.body])
+    var p = Qt.createQmlObject('import Quickshell.Io; Process { stdout: StdioCollector { waitForEnd: true } }', root)
+    p.stdout.streamFinished.connect(function() {
+      var action = String(p.stdout.text || "").trim()
+      if (action === "snooze") root.snooze(e)
+      else if (action === "default") root.openUrl(url)
+      p.destroy()
+    })
+    p.command = args
+    p.running = true
   }
 
-  Process {
-    id: notifyProc
-    onExited: root.sendNext()
+  function snooze(e) {
+    var fired = Object.assign({}, root.fired)
+    fired["snooze:" + e.uid] = Date.now() + root.snoozeMinutes * 60000
+    delete fired["shown:" + e.uid]
+    root.saveFired(fired)
+  }
+
+  // Snooze is offered for 15 minutes after a reminder pops up, until the
+  // event ends; not while a snooze is already pending.
+  function canSnooze(e, fired, now) {
+    var at = fired["shown:" + e.uid]
+    if (!at || fired["snooze:" + e.uid]) return false
+    var t = now.getTime()
+    var end = String(e.end).length === 10 ? Model.keyToDate(e.end).getTime() : new Date(e.end).getTime()
+    return t - at < 15 * 60000 && t < end
   }
 
   Timer {
@@ -249,7 +295,10 @@ Panel {
     running: true
     repeat: true
     triggeredOnStart: true
-    onTriggered: root.checkReminders()
+    onTriggered: {
+      root.clockNow = new Date()
+      root.checkReminders()
+    }
   }
 
   Process { id: urlProc }
@@ -1081,7 +1130,7 @@ Panel {
                   id: eventRow
                   required property var modelData
                   width: agenda.width
-                  height: Math.max(eventText.implicitHeight, joinButton.visible ? joinButton.height : 0) + Style.space(8)
+                  height: Math.max(eventText.implicitHeight, rowButtons.visible ? rowButtons.height : 0) + Style.space(8)
                   radius: Style.cornerRadius
                   color: rowMouse.containsMouse ? Style.hoverFillFor(root.contentForeground, Color.accent) : "transparent"
                   opacity: modelData.declined ? 0.5 : 1
@@ -1109,7 +1158,7 @@ Panel {
                     id: eventText
                     anchors.left: colorBar.right
                     anchors.leftMargin: Style.space(10)
-                    anchors.right: joinButton.visible ? joinButton.left : parent.right
+                    anchors.right: rowButtons.visible ? rowButtons.left : parent.right
                     anchors.rightMargin: Style.space(8)
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(1)
@@ -1137,12 +1186,32 @@ Panel {
                     }
                   }
 
+                  Row {
+                    id: rowButtons
+                    visible: joinButton.visible || snoozeButton.visible
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(6)
+
+                  // Omarchy's notification cards have no buttons, only a
+                  // click (which joins), so Snooze lives here while a
+                  // reminder is fresh.
+                  Button {
+                    id: snoozeButton
+                    bordered: true
+                    visible: root.canSnooze(eventRow.modelData, root.fired, root.clockNow)
+                    iconText: "󰒲"
+                    text: "Snooze"
+                    tooltipText: "Remind me again in " + root.snoozeMinutes + " minutes"
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    onClicked: root.snooze(eventRow.modelData)
+                  }
+
                   Button {
                     id: joinButton
                     bordered: true
                     visible: !!eventRow.modelData.join
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     iconText: "󰕧"
                     text: "Join"
                     tooltipText: eventRow.modelData.join
@@ -1151,6 +1220,7 @@ Panel {
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
                     onClicked: root.openUrl(eventRow.modelData.join.url)
+                  }
                   }
                 }
               }

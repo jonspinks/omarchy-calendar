@@ -560,11 +560,29 @@ function dueReminders(data, calendars, nowMs, fired) {
   return due
 }
 
+// Snoozed reminders whose time has come, while their event hasn't ended.
+// fired["snooze:<uid>"] holds when each should come back.
+function dueSnoozes(data, fired, nowMs) {
+  var out = []
+  var evs = (data && data.events) || []
+  for (var i = 0; i < evs.length; i++) {
+    var e = evs[i]
+    var at = fired["snooze:" + e.uid]
+    if (!at || nowMs < at) continue
+    var end = e.allDay ? keyToDate(e.end).getTime() : new Date(e.end).getTime()
+    if (nowMs >= end || e.status === "cancelled") continue
+    out.push({ id: "snooze:" + e.uid, event: e, minutes: Math.round((startMs(e) - nowMs) / 60000), also: [] })
+  }
+  return out
+}
+
 function reminderText(r, calName, use24h) {
   var e = r.event
-  var when = r.minutes > 1 ? "in " + r.minutes + " min"
+  var when = e.allDay && r.minutes <= 0 ? "today"
+           : r.minutes > 1 ? "in " + r.minutes + " min"
            : r.minutes >= -1 ? "starting now"
            : "started " + (-r.minutes) + " min ago"
+  if (String(r.id).indexOf("snooze:") === 0) when = "snoozed · " + when
   var time = e.allDay ? "All day" : clockLabel(new Date(e.start), use24h) + " – " + clockLabel(new Date(e.end), use24h)
   var how = e.join ? " · click to join " + ({teams: "Teams", zoom: "Zoom", meet: "Meet", webex: "Webex"}[e.join.kind] || "the meeting")
                    : (e.webLink ? " · click to open" : "")
@@ -610,6 +628,7 @@ if (typeof module !== "undefined") {
     busyLevel: busyLevel,
     reminderTimes: reminderTimes,
     dueReminders: dueReminders,
+    dueSnoozes: dueSnoozes,
     reminderText: reminderText
   }
 }
