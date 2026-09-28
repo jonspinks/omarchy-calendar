@@ -22,6 +22,13 @@ A normalised event:
     webLink      the event in the provider's own web app, or ""
     etag         the provider's version stamp, for safe edits later
     remind       minutes before the start to pop up a reminder, e.g. [10]; [] for none
+    guests       the guest list, organiser first, as
+                 {"email", "name", "response", "optional", "organizer", "me", "room"}
+                 with response accepted | tentative | declined | needsAction;
+                 [] when nobody else is invited. At most GUEST_CAP are kept.
+    guestTotal   how many guests there are, kept or not
+    guestsHidden True when the organiser has hidden the list from guests, so
+                 it holds only you
 
 Both providers are asked for end-exclusive all-day dates, and timed events are
 kept as UTC instants: local time is applied only when something is displayed,
@@ -64,6 +71,35 @@ def join_kind(url):
         if rx.match(url or ""):
             return kind
     return "other"
+
+
+GUEST_CAP = 100
+GUEST_ANSWERS = ("accepted", "tentative", "declined", "needsAction")
+# The order a guest list reads in: who's coming first, who said no last.
+_ANSWER_RANK = {"accepted": 0, "tentative": 1, "needsAction": 2, "declined": 3}
+EMAIL = re.compile(r"^[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[^@\s,;<>\"']+$")
+
+
+def guest(email, name="", response="needsAction", optional=False, organizer=False, me=False, room=False):
+    return {"email": email or "", "name": (name or "").strip(),
+            "response": response if response in GUEST_ANSWERS else "needsAction",
+            "optional": bool(optional), "organizer": bool(organizer), "me": bool(me), "room": bool(room)}
+
+
+def guest_fields(guests, hidden=False):
+    """The event's guest fields: the list in reading order, capped, and its size.
+
+    A list of one is only ever the organiser or you, so it isn't a guest list.
+    """
+    if len(guests) < 2:
+        guests = []
+
+    def rank(g):
+        return (not g["organizer"], g["room"], _ANSWER_RANK[g["response"]], g["optional"],
+                (g["name"] or g["email"]).lower())
+
+    guests = sorted(guests, key=rank)
+    return {"guests": guests[:GUEST_CAP], "guestTotal": len(guests), "guestsHidden": bool(hidden)}
 
 
 def utc_iso(dt):

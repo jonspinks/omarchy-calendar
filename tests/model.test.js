@@ -4,7 +4,8 @@ const fs = require("fs")
 const path = require("path")
 const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
-  " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders }")()
+  " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders," +
+  " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -74,6 +75,43 @@ const back = M.dueSnoozes({ events: [se] }, { "snooze:a/c/1": t - 1 }, t)
 eq(back.length, 1, "snooze: due")
 eq(M.reminderText(back[0], "Work", false).body.indexOf("snoozed · "), 0, "snooze: labelled")
 eq(M.dueSnoozes({ events: [Object.assign({}, se, { end: iso(t - 1) })] }, { "snooze:a/c/1": t - 1 }, t).length, 0, "snooze: not after the end")
+
+
+// Guests.
+const guests = [
+  { email: "olive@x.co", name: "Olive", response: "accepted", organizer: true, me: false, optional: false, room: false },
+  { email: "me@x.co", name: "", response: "tentative", organizer: false, me: true, optional: false, room: false },
+  { email: "Bob@x.co", name: "Bob@x.co", response: "needsAction", organizer: false, me: false, optional: true, room: false },
+  { email: "zed@x.co", name: "Zed", response: "declined", organizer: false, me: false, optional: false, room: false }
+]
+eq(M.guestSummary(guests, 4), "4 guests · 1 yes, 1 maybe, 1 no, 1 waiting", "guests: summary")
+eq(M.guestSummary(guests.slice(0, 1), 150), "150 guests · 1 yes", "guests: summary counts the whole list")
+eq(M.parseAddresses("A@b.co; c@d.co  a@b.co"), { list: ["a@b.co", "c@d.co"] }, "guests: addresses split and deduped")
+eq(M.parseAddresses("a@b.co, <x@y.co>").error, "<x@y.co> isn't an email address.", "guests: bad address")
+eq(M.guestEdit(guests, [], [], "new@x.co"), { invited: ["new@x.co"], uninvited: [] }, "guests: add")
+eq(M.guestEdit(guests, [], [], "BOB@x.co").error, "bob@x.co is already invited.", "guests: already on the list")
+eq(M.guestEdit(guests, ["new@x.co"], [], "new@x.co").error, "new@x.co is already invited.", "guests: already added")
+eq(M.guestEdit(guests, [], ["bob@x.co"], "bob@x.co"), { invited: [], uninvited: [] }, "guests: typing back undoes a removal")
+eq(M.guestRemove([], [], "Bob@x.co"), { invited: [], uninvited: ["bob@x.co"] }, "guests: remove")
+eq(M.guestRemove(["new@x.co"], [], "new@x.co"), { invited: [], uninvited: [] }, "guests: removing one just added forgets them")
+const rows = M.guestRows(guests, ["new@x.co"], ["bob@x.co"])
+eq(rows.map(r => [r.title, r.detail, r.answer, r.tags, r.fixed, r.pending]), [
+  ["Olive", "olive@x.co", "Yes", "organiser", true, ""],
+  ["me@x.co", "", "Maybe", "you", true, ""],
+  ["Bob@x.co", "", "Waiting", "optional", false, "remove"],
+  ["Zed", "zed@x.co", "No", "", false, ""],
+  ["new@x.co", "", "Invite", "", false, "add"]], "guests: rows")
+
+e = M.eventDraft(Object.assign({}, ev, { guests: guests }))
+eq(M.draftArgs(e).args, [], "guests: untouched, nothing to send")
+e.invited = ["new@x.co"]; e.uninvited = ["bob@x.co"]
+eq(M.draftArgs(e).args, ["update", "P/c/1", "--invite", "new@x.co", "--uninvite", "bob@x.co"], "guests: changes sent")
+e.invited = []; e.uninvited = []; e.guestText = "typed@x.co"
+eq(M.draftArgs(e).args, ["update", "P/c/1", "--invite", "typed@x.co"], "guests: typed but not added still counts")
+e.guestText = "oops"
+eq(M.draftArgs(e).error, "oops isn't an email address.", "guests: typed nonsense stops the save")
+e.guestText = ""; e.title = "New"; e.invited = ["new@x.co"]; e.series = true
+eq(M.draftArgs(e).args, ["update", "P/c/1", "--title", "New", "--invite", "new@x.co", "--series"], "guests: with a title, for the series")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

@@ -109,7 +109,7 @@ def _fetch(a, prov, tok, cal, window, cursor):
     if prov is google:
         events, removed, at = google.fetch(a["name"], tok, cal, window, cursor)
         return events, removed, google.since(at)
-    return graph.fetch(a["name"], tok, cal, window, cursor)
+    return graph.fetch(a["name"], tok, cal, window, cursor, a.get("email", ""))
 
 
 def publish(accounts, states):

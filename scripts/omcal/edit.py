@@ -174,6 +174,7 @@ def create(ref, title, start, end=None, all_day=False, location="", invite=(), b
     title = title.strip() or "(no title)"
     if busy is None:
         busy = not all_day
+    invite = _addresses(invite)
     tok = token(a)
     if a["provider"] == "google":
         body = {"summary": title, "location": location,
@@ -193,7 +194,7 @@ def create(ref, title, start, end=None, all_day=False, location="", invite=(), b
                 "attendees": [{"emailAddress": {"address": m}, "type": "required"} for m in invite]}
         ev = auth.send_json("POST", GRAPH + "/me/calendars/%s/events" % q(cal["id"]), tok, body,
                             {"Prefer": 'outlook.timezone="UTC"'})
-        new = graph.normalise(a["name"], cal, ev)
+        new = graph.normalise(a["name"], cal, ev, a.get("email", ""))
     _add(a["name"], new)
     return new["uid"]
 
@@ -239,18 +240,22 @@ def _add(account, event):
 
 # ------------------------------------------------------------------ edit
 
-def update(uid, title=None, start=None, end=None, all_day=None, location=None, series=False, busy=None):
-    """Change an event's title, times, place or free/busy; None leaves a field as it is.
+def update(uid, title=None, start=None, end=None, all_day=None, location=None, series=False, busy=None,
+           invite=(), uninvite=()):
+    """Change an event's title, times, place, free/busy or guests; None leaves a field as it is.
 
     Guarded by the local copy's etag: if the event changed anywhere else since
     the last sync, nothing is written and Conflict says so. With series, the
     title and place change for every occurrence; times can only be moved one
     occurrence at a time (a series' own start is its first occurrence, not
     this one, so moving it from here would shift every date by surprise).
+
+    invite and uninvite add and remove guests by address; the provider sends
+    the invitations and cancellations. They are applied to the provider's own
+    current list, read just before the write, so a guest someone else added
+    meanwhile is kept, never dropped.
     """
     from datetime import timedelta
-    from . import google, graph
-    from .model import utc_iso
     a, path, st, e, eid = locate(uid)
     if not e.get("editable"):
         raise EditError("you can't change this event: it isn't yours, or the calendar is read-only")
@@ -278,9 +283,61 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
             raise EditError("the end has to be after the start")
     target = e["seriesId"] if series else eid
     guard = {} if series else {"If-Match": e["etag"]} if e.get("etag") else {}
+    invite, uninvite = _addresses(invite), _addresses(uninvite)
+    body = _fields_body(a, title, location, busy, (s, en, ad) if timing else None)
+    # What a series' occurrences take at once; the rest comes back with the sync.
+    local = {k: v for k, v in (("title", None if title is None else title.strip() or "(no title)"),
+                               ("location", location), ("busy", busy)) if v is not None}
     tok = token(a)
+    if invite or uninvite:
+        ev, body = _write_guests(a, e, target, tok, invite, uninvite, body, guard)
+    elif a["provider"] == "google":
+        ev = auth.send_json("PATCH", GOOGLE + "/calendars/%s/events/%s?sendUpdates=all" % (q(e["calendar"]), q(target)),
+                            tok, body, guard)
+    else:
+        ev = auth.send_json("PATCH", GRAPH + "/me/calendars/%s/events/%s" % (q(e["calendar"]), q(target)),
+                            tok, body, dict(guard, Prefer='outlook.timezone="UTC"'))
+    _saved(a, e, cal, ev or {}, series, local, "attendees" in body)
+
+
+def _saved(a, e, cal, ev, series, local, guests_changed):
+    """Put the provider's reply to a write into the local copy."""
+    from . import google, graph
+    new = None
+    if "start" in ev:
+        new = (google.normalise(a["name"], cal, ev) if a["provider"] == "google"
+               else graph.normalise(a["name"], cal, ev, a.get("email", "")))
+    if not series:
+        if new:
+            _add(a["name"], new)
+        return
+    # The reply is the series itself; its occurrences come back with the sync.
+    fields = dict(local)
+    if new and guests_changed:
+        fields.update({k: new[k] for k in ("guests", "guestTotal", "guestsHidden")})
+    _apply(a["name"], lambda x: x.get("seriesId") == e["seriesId"], fields)
+
+
+# ------------------------------------------------------------------ guests
+
+def _addresses(items):
+    """Email addresses, each checked, lower-cased and listed once."""
+    from .model import EMAIL
+    out = []
+    for x in items or ():
+        x = x.strip()
+        if not EMAIL.match(x):
+            raise EditError("%s isn't an email address" % x)
+        if x.lower() not in out:
+            out.append(x.lower())
+    return out
+
+
+def _fields_body(a, title, location, busy, timing):
+    """The PATCH body for the plain fields, as update() writes them."""
+    from .model import utc_iso
+    body = {}
     if a["provider"] == "google":
-        body = {}
         if title is not None:
             body["summary"] = title.strip() or "(no title)"
         if location is not None:
@@ -288,12 +345,10 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
         if busy is not None:
             body["transparency"] = "opaque" if busy else "transparent"
         if timing:
+            s, en, ad = timing
             body["start"] = {"date": s.isoformat(), "dateTime": None} if ad else {"dateTime": utc_iso(s), "date": None}
             body["end"] = {"date": en.isoformat(), "dateTime": None} if ad else {"dateTime": utc_iso(en), "date": None}
-        ev = auth.send_json("PATCH", GOOGLE + "/calendars/%s/events/%s?sendUpdates=all" % (q(e["calendar"]), q(target)),
-                            tok, body, guard)
     else:
-        body = {}
         if title is not None:
             body["subject"] = title.strip() or "(no title)"
         if location is not None:
@@ -301,17 +356,81 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
         if busy is not None:
             body["showAs"] = "busy" if busy else "free"
         if timing:
+            s, en, ad = timing
             zone = local_zone() if ad else "UTC"
             stamp = (lambda d: d.isoformat() + "T00:00:00") if ad else (lambda d: utc_iso(d)[:-1])
             body.update({"isAllDay": ad, "start": {"dateTime": stamp(s), "timeZone": zone},
                          "end": {"dateTime": stamp(en), "timeZone": zone}})
-        ev = auth.send_json("PATCH", GRAPH + "/me/calendars/%s/events/%s" % (q(e["calendar"]), q(target)),
-                            tok, body, dict(guard, Prefer='outlook.timezone="UTC"'))
-    if series:
-        # The reply is the series itself; its occurrences come back with the sync.
-        fields = {k: v for k, v in (("title", body.get("summary") or body.get("subject")),
-                                    ("location", location), ("busy", busy)) if v is not None}
-        _apply(a["name"], lambda x: x.get("seriesId") == e["seriesId"], fields)
+    return body
+
+
+def _version(etag):
+    """An etag's version part: Graph's @odata.etag is W/"<changeKey>"."""
+    etag = etag or ""
+    return etag.split('"')[-2] if etag.count('"') >= 2 else etag
+
+
+def merge_guests(provider, attendees, invite, uninvite, me="", organizer=""):
+    """The provider's attendee list with these addresses added and removed.
+
+    attendees is the list exactly as the provider sent it; the entries kept
+    are passed back as they came, answers included. Raises EditError for a
+    change that can't be made: adding someone already invited, removing
+    someone who isn't, or removing the organiser or yourself.
+    """
+    def addr(x):
+        return ((x.get("email") if provider == "google" else (x.get("emailAddress") or {}).get("address")) or "").lower()
+
+    have = {addr(x): x for x in attendees}
+    for m in uninvite:
+        if m not in have and m != organizer:
+            raise EditError("%s isn't on the guest list" % m)
+        if m == organizer or provider == "google" and have[m].get("organizer"):
+            raise EditError("%s is the organiser, and can't be taken off" % m)
+        if m == me or provider == "google" and have[m].get("self"):
+            raise EditError("you can't take yourself off your own event")
+    for m in invite:
+        if m in have and m not in uninvite or m == organizer:
+            raise EditError("%s is already invited" % m)
+    out = [x for x in attendees if addr(x) not in uninvite]
+    for m in invite:
+        out.append({"email": m} if provider == "google" else {"emailAddress": {"address": m}, "type": "required"})
+    if provider != "google":
+        # Graph replaces the list wholesale and keeps each kept guest's answer
+        # by address; the answers themselves are read-only.
+        out = [{"emailAddress": x["emailAddress"], "type": x.get("type", "required")} for x in out]
+    return out
+
+
+def _write_guests(a, e, target, tok, invite, uninvite, fields, guard):
+    """Read the provider's current guest list, change it, and write it back,
+    with any other field changes, in one write guarded by the etag just read.
+
+    If other fields are changing too and the event has changed since the local
+    copy, that's a conflict, as it is for any update. Guests alone are retried
+    once on a conflict: the same change, applied to the newer list.
+    Returns (the provider's reply, the body written).
+    """
+    if a["provider"] == "google":
+        url = GOOGLE + "/calendars/%s/events/%s" % (q(e["calendar"]), q(target))
+        read, write, headers = url, url + "?sendUpdates=all", {}
     else:
-        new = (google if a["provider"] == "google" else graph).normalise(a["name"], cal, ev)
-        _add(a["name"], new)
+        url = GRAPH + "/me/calendars/%s/events/%s" % (q(e["calendar"]), q(target))
+        read, write, headers = url + "?$select=attendees,organizer", url, {"Prefer": 'outlook.timezone="UTC"'}
+    me = (a.get("email") or "").lower()
+    for attempt in (1, 2):
+        cur = auth.get_json(read, tok)
+        if a["provider"] == "google":
+            organizer, etag = (cur.get("organizer") or {}).get("email"), cur.get("etag", "")
+        else:
+            organizer = ((cur.get("organizer") or {}).get("emailAddress") or {}).get("address")
+            etag = cur.get("@odata.etag", "")
+        if fields and guard and _version(guard["If-Match"]) != _version(etag):
+            raise auth.Conflict("the event was changed elsewhere; sync and try again")
+        body = dict(fields, attendees=merge_guests(a["provider"], cur.get("attendees") or [], invite, uninvite,
+                                                   me, (organizer or "").lower()))
+        try:
+            return auth.send_json("PATCH", write, tok, body, dict(headers, **({"If-Match": etag} if etag else {}))), body
+        except auth.Conflict:
+            if fields or attempt == 2:
+                raise
