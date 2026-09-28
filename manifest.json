@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "blacksheep.calendar",
+  "name": "Calendar",
+  "version": "0.1.0",
+  "author": "Jon",
+  "license": "MIT",
+  "description": "Omarchy's clock and calendar, with your Google Calendar and Microsoft 365 events in it",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Calendar",
+    "description": "The clock, with Google Calendar and Microsoft 365 events on the month grid, a day agenda, and Join buttons for meetings.",
+    "category": "Time",
+    "allowMultiple": false
+  }
+}

@@ -19,3 +19,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+BarWidget.qml, Panel.qml and Model.js are derived from Omarchy's stock clock
+widget (/usr/share/omarchy/shell/plugins/panels/clock), which is:
+
+Copyright (c) David Heinemeier Hansson
+
+Released under the MIT License, the same terms as above.
