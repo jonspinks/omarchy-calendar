@@ -23,7 +23,7 @@ import time
 import urllib.error
 from datetime import datetime, timedelta, timezone
 
-from . import auth, google, graph
+from . import auth, files, google, graph
 from .model import sort_key
 
 APP = "blacksheep.calendar"
@@ -33,21 +33,10 @@ DAYS_BACK, DAYS_AHEAD = 35, 120
 GOOGLE_FULL_EVERY = 6 * 3600
 
 
-def write_private(path, data):
-    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-    tmp = path + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(data, f, separators=(",", ":"))
-    os.replace(tmp, path)
-
-
-def read_json(path, default):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (FileNotFoundError, ValueError):
-        return default
+# The private write, read and lock helpers live in files.py (see there).
+write_private = files.write_private
+read_json = files.read_json
+LOCK = os.path.join(RUNTIME, APP + ".lock")
 
 
 def window_now():
@@ -175,8 +164,7 @@ def dedupe(events, calendars):
 @contextlib.contextmanager
 def locked():
     """Wait for any running sync, and hold the lock meanwhile."""
-    os.makedirs(RUNTIME, exist_ok=True)
-    with open(os.path.join(RUNTIME, APP + ".lock"), "w") as lock:
+    with files.open_lock(LOCK) as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         yield
 
@@ -192,8 +180,7 @@ def main(argv):
     full = "--full" in argv
     quiet = "--quiet" in argv
     log = (lambda *_: None) if quiet else print
-    os.makedirs(RUNTIME, exist_ok=True)
-    lock = open(os.path.join(RUNTIME, APP + ".lock"), "w")
+    lock = files.open_lock(LOCK)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:

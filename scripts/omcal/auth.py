@@ -14,11 +14,12 @@ import os
 import secrets
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from . import files
 
 
 class AuthError(Exception):
@@ -51,20 +52,11 @@ def die(msg):
 # ---------------------------------------------------------------- config
 
 def load_accounts():
-    try:
-        with open(ACCOUNTS) as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return []
+    return files.read_json(ACCOUNTS, [])
 
 
 def save_accounts(accounts):
-    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
-    tmp = ACCOUNTS + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(accounts, f, indent=2)
-    os.replace(tmp, ACCOUNTS)
+    files.write_private(ACCOUNTS, accounts, indent=2)
 
 
 CHOICES = os.path.join(CONFIG_DIR, "calendars.json")
@@ -72,20 +64,12 @@ CHOICES = os.path.join(CONFIG_DIR, "calendars.json")
 
 def hidden_calendars():
     """{account: set of calendar ids you've chosen not to see}. Not secret."""
-    try:
-        with open(CHOICES) as f:
-            return {k: set(v) for k, v in json.load(f).get("hidden", {}).items()}
-    except (FileNotFoundError, ValueError):
-        return {}
+    data = files.read_json(CHOICES, {})
+    return {k: set(v) for k, v in (data.get("hidden", {}) if isinstance(data, dict) else {}).items()}
 
 
 def save_hidden(hidden):
-    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
-    tmp = CHOICES + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump({"hidden": {k: sorted(v) for k, v in hidden.items() if v}}, f, indent=2)
-    os.replace(tmp, CHOICES)
+    files.write_private(CHOICES, {"hidden": {k: sorted(v) for k, v in hidden.items() if v}}, indent=2)
 
 
 def account(name):
@@ -139,10 +123,11 @@ def post_form(url, fields):
                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            return json.load(r)
+            return files.reply_json(r)
     except urllib.error.HTTPError as e:
+        # A token endpoint says why in a small JSON error body.
         try:
-            return json.load(e)
+            return files.reply_json(e, limit=64 * 1024)
         except Exception:
             raise HttpError(urllib.parse.urlsplit(url).netloc, e.code)
 
@@ -151,9 +136,9 @@ def get_json(url, token):
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            return json.load(r)
+            return files.reply_json(r)
     except urllib.error.HTTPError as e:
-        raise HttpError(urllib.parse.urlsplit(url).netloc, e.code, e.read().decode(errors="replace")[:300])
+        raise HttpError(urllib.parse.urlsplit(url).netloc, e.code, error_text(e))
 
 
 class Conflict(RuntimeError):
@@ -171,12 +156,19 @@ def send_json(method, url, token, body=None, headers=None):
     req = urllib.request.Request(url, data=data, headers=h, method=method)
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            raw = r.read()
-            return json.loads(raw) if raw.strip() else None
+            return files.reply_json(r)
     except urllib.error.HTTPError as e:
         if e.code == 412:
             raise Conflict("the event was changed elsewhere; sync and try again")
-        raise HttpError(urllib.parse.urlsplit(url).netloc, e.code, e.read().decode(errors="replace")[:300])
+        raise HttpError(urllib.parse.urlsplit(url).netloc, e.code, error_text(e))
+
+
+def error_text(e):
+    """The start of an error reply, for the message: read no more than that."""
+    try:
+        return e.read(4096).decode(errors="replace")[:300]
+    except Exception:
+        return ""
 
 
 def token_error(t):
@@ -188,8 +180,13 @@ def token_error(t):
 def add_google(name, client_file):
     check_name(name)
     try:
-        with open(client_file) as f:
-            c = json.load(f)
+        # The file you downloaded, so it may be a link; it is still only ever
+        # a few hundred bytes, and read no further than that allows.
+        with open(client_file, "rb") as f:
+            raw = f.read(64 * 1024 + 1)
+        if len(raw) > 64 * 1024:
+            die("%s is far too large to be a Google client file" % client_file)
+        c = json.loads(raw)
     except (OSError, ValueError) as e:
         die("cannot read %s: %s" % (client_file, e))
     c = c.get("installed") or c.get("web") or {}
@@ -203,6 +200,8 @@ def add_google(name, client_file):
     got = {}
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        timeout = 10  # a connection that sends nothing is dropped, not waited on
+
         def do_GET(self):
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             if q.get("state", [""])[0] != state:
@@ -225,10 +224,12 @@ def add_google(name, client_file):
         "code_challenge": challenge, "code_challenge_method": "S256", "state": state})
     print("Opening your browser to sign in to Google. If it doesn't open, visit:\n\n  %s\n" % url)
     subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    threading.Thread(target=srv.handle_request, daemon=True).start()
+    # Serve until the real redirect arrives: a stray request (a favicon, or
+    # another local account poking the port) gets a 400 and doesn't end it.
+    srv.timeout = 1
     deadline = time.time() + 300
     while "code" not in got and time.time() < deadline:
-        time.sleep(0.2)
+        srv.handle_request()
     srv.server_close()
     if got.get("error") or not got.get("code"):
         die("Google sign-in did not finish: %s" % (got.get("error") or "timed out"))

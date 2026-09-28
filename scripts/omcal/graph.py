@@ -16,6 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import files
 from .model import find_join, join_kind, parse_instant, utc_iso
 
 API = "https://graph.microsoft.com/v1.0"
@@ -32,12 +33,12 @@ def _get(url, tok):
                                                "Prefer": "odata.maxpagesize=100"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return json.load(r)
+            return files.reply_json(r)
     except urllib.error.HTTPError as e:
         if e.code == 410:
             raise DeltaExpired()
-        from .auth import HttpError
-        raise HttpError("graph.microsoft.com", e.code, e.read().decode(errors="replace")[:300])
+        from .auth import HttpError, error_text
+        raise HttpError("graph.microsoft.com", e.code, error_text(e))
 
 
 def calendars(tok):
