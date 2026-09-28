@@ -410,8 +410,10 @@ Item {
 
     YearView {
       visible: layout.p && layout.p.viewMode === "year"
-      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.verticalCenter: parent.verticalCenter
       width: parent.width
+      fitHeight: main.height
+      selectedKey: layout.p ? layout.p.selectedKey : ""
       yearNumber: layout.p ? Model.keyToDate(layout.p.selectedKey).getFullYear() : 2026
       byDay: layout.p ? layout.p.eventIndex.byDay : ({})
       todayKey: layout.p ? layout.p.todayKey : ""
@@ -419,6 +421,7 @@ Item {
       foreground: layout.fg
       fontFamily: layout.fontName
       onPickDay: function(key) { layout.p.openDay(key) }
+      onOpenMonth: function(m) { layout.p.openMonth(m) }
     }
   }
 

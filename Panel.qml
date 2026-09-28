@@ -154,6 +154,14 @@ Panel {
     root.runWrite(root.draftEvent.uid, ["respond", root.draftEvent.uid, answer].concat(series ? ["--series"] : []))
   }
 
+  // From the year: the month, on today if it's in it, else on its first day.
+  function openMonth(month) {
+    var y = Model.keyToDate(root.selectedKey).getFullYear()
+    var t = Model.keyToDate(root.todayKey)
+    root.selectedKey = t.getFullYear() === y && t.getMonth() === month ? root.todayKey : Model.dateKey(y, month, 1)
+    root.viewMode === "month" ? root.showSelectedMonth() : root.setView("month")
+  }
+
   function openDay(key) {
     root.selectedKey = key
     root.setView("day")
@@ -971,10 +979,12 @@ Panel {
             yearNumber: Model.keyToDate(root.selectedKey).getFullYear()
             byDay: root.eventIndex.byDay
             todayKey: root.todayKey
+            selectedKey: root.selectedKey
             weekStart: root.weekStart
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
             onPickDay: function(key) { root.openDay(key) }
+            onOpenMonth: function(m) { root.openMonth(m) }
           }
 
           // ---- Month grid: week numbers down a gutter on the left, then
