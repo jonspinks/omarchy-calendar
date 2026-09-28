@@ -238,7 +238,7 @@ Panel {
         root.editorError = msg
         return
       }
-      failProc.command = ["omarchy-notification-send", "-g", "󰃭", "-u", "normal", "--app-name", "Calendar",
+      failProc.command = ["omarchy-notification-send", "-g", "󰃭", "-u", "normal", "--app-name", "Datebook",
                           "Calendar: not saved", msg]
       failProc.running = true
     }
@@ -404,7 +404,7 @@ Panel {
     var cal = root.eventIndex.calendars[e.account + "/" + e.calendar] || {}
     var text = Model.reminderText(r, cal.name || e.account, root.use24h)
     var url = e.join ? e.join.url : e.webLink
-    var args = ["notify-send", "--app-name=Calendar", "--urgency=normal",
+    var args = ["notify-send", "--app-name=Datebook", "--urgency=normal",
                 "--hint=string:omarchy-glyph:󰃭",
                 "--action=snooze=Snooze " + root.snoozeMinutes + " min"]
     if (/^https:\/\//.test(String(url || "")))

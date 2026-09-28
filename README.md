@@ -1,10 +1,10 @@
-# Calendar — Google Calendar and Microsoft 365 in Omarchy's clock
+# Datebook — Google Calendar and Microsoft 365 in Omarchy's clock
 
 Click the clock and your actual week is there: every Google and Microsoft 365
 calendar you have, in one place, with a Join button when a meeting's about to
 start.
 
-![Calendar: your week, what's next, and a reminder you can join from](preview.png)
+![Datebook: your week, what's next, and a reminder you can join from](preview.png)
 
 ## What you get
 
@@ -69,8 +69,9 @@ If the clock was your bar's centre anchor (Omarchy's default), make the
 calendar the anchor instead, so the centre of the bar stays centred:
 
 ```bash
-jq '.bar.centerAnchor = "blacksheep.calendar"' ~/.config/omarchy/shell.json > /tmp/shell.json \
-  && mv /tmp/shell.json ~/.config/omarchy/shell.json
+t=$(mktemp ~/.config/omarchy/shell.json.XXXXXX) \
+  && jq '.bar.centerAnchor = "blacksheep.calendar"' ~/.config/omarchy/shell.json > "$t" \
+  && mv "$t" ~/.config/omarchy/shell.json
 ```
 
 Then sign in to your accounts (next section). Until you do, it's the clock

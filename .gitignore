@@ -1,2 +1,12 @@
 __pycache__/
 *.pyc
+
+# Never commit sign-in material or a copy of anyone's calendar. The tool
+# keeps these outside the plugin folder, but a downloaded Google client file
+# dropped in here by hand would otherwise be one "git add" from public.
+client_secret*.json
+*.token
+accounts.json
+calendars.json
+events.json
+state-*.json

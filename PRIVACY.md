@@ -1,8 +1,8 @@
-# Privacy policy: Omarchy Calendar
+# Privacy policy: Datebook
 
 *Last updated: 27 September 2026*
 
-Omarchy Calendar is a desktop calendar for the Omarchy Linux desktop. It shows
+Datebook (Omarchy Calendar) is a desktop calendar for the Omarchy Linux desktop. It shows
 your Google Calendar and Microsoft 365 events in the desktop's calendar, sends
 meeting reminders, and lets you create, edit, delete and respond to events.
 It is open source: everything it does is in this repository.
@@ -23,7 +23,7 @@ anything else.
 
 ## Where your data goes
 
-Nowhere but your own computer. Omarchy Calendar has no server, and no one
+Nowhere but your own computer. Datebook has no server, and no one
 operates a service behind it: it runs entirely on your machine and talks
 directly to Google's and Microsoft's calendar APIs.
 
@@ -41,15 +41,19 @@ to anyone, and never used for advertising, analytics or training.
 ## Removing your data
 
 - `calendar-ctl remove <account>` deletes that account's settings and its
-  keyring entry.
-- Uninstalling the plugin removes its cache.
+  keyring entry. Do this for each account **before** removing the plugin:
+  removing the plugin alone leaves the keyring entries in place.
+- Removing the plugin doesn't delete its files outside the plugin folder.
+  The account list in `~/.config/blacksheep.calendar/` and the copy of your
+  events in `~/.cache/blacksheep.calendar/` stay until you delete them; both
+  are safe to delete.
 - You can revoke its access at any time: for Google at
   <https://myaccount.google.com/permissions>, and for Microsoft at
   <https://myaccount.microsoft.com> under *App permissions*.
 
 ## Use of Google user data
 
-Omarchy Calendar's use and transfer of information received from Google APIs
+Datebook's use and transfer of information received from Google APIs
 adheres to the
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
 including the Limited Use requirements.
