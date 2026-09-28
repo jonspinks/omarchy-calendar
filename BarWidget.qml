@@ -154,6 +154,11 @@ BarWidget {
     function toggle(): void { root.togglePanel() }
     function newEvent(): void { root.newEvent() }
     function view(name: string): void { root.showView(name) }
+    function showEvent(uid: string): void {
+      if (!panelLoader.item) return
+      panelLoader.item.open()
+      panelLoader.item.showEvent(uid)
+    }
     function compact(): void { if (panelLoader.item) panelLoader.item.setLayout(false) }
     function expand(): void { if (panelLoader.item) panelLoader.item.setLayout(true) }
   }

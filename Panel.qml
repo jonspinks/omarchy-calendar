@@ -276,6 +276,20 @@ Panel {
     root.draft = Model.eventDraft(ev)
   }
 
+  // Open one event by its uid (IPC showEvent), from whichever day holds it.
+  function showEvent(uid) {
+    var byDay = root.eventIndex.byDay
+    for (var key in byDay) {
+      var rows = byDay[key]
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].uid !== uid) continue
+        root.pickDay(key)
+        root.openEditor(rows[i])
+        return
+      }
+    }
+  }
+
   function newEvent() {
     root.editorError = ""
     root.draftEvent = null

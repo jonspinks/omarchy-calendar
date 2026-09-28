@@ -105,7 +105,7 @@ def cmd_pick():
     if not rows:
         die("no calendars yet: run calendar-ctl sync first")
     if not shutil.which("gum"):
-        die("the picker needs gum (omarchy pkg add gum); or use calendar-ctl hide|show")
+        die("the picker needs gum, which Omarchy ships; or use calendar-ctl hide|show")
     # gum returns the chosen labels, and splits --selected on commas, so each
     # label carries its row number and no commas of its own.
     labels = ["%2d  %s · %s%s" % (i + 1, acc, name.replace(",", " "), "" if editable else "  (read-only)")
