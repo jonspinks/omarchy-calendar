@@ -1256,9 +1256,10 @@ Panel {
                   onClicked: root.chooseCalendars()
                 }
 
-                PanelActionButton {
+                Button {
                   iconText: syncProc.running ? "󰑓" : "󰑐"
-                  tooltipText: syncProc.running ? "Syncing…" : "Sync now"
+                  text: syncProc.running ? "Syncing…" : "Sync"
+                  tooltipText: "Sync now"
                   foreground: root.contentForeground
                   fontFamily: root.contentFontFamily
                   onClicked: root.syncNow()
