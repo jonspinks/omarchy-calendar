@@ -6,6 +6,8 @@
     calendar-ctl list
     calendar-ctl test <name>          # the next five events, to prove access
     calendar-ctl sync [--full]        # bring the local copy up to date
+    calendar-ctl calendars            # every calendar, and which are shown
+    calendar-ctl hide|show <account> <number or name>
     calendar-ctl remove <name>
 
 Secrets never touch disk here. Each account's refresh token (and, for Google,
@@ -58,6 +60,49 @@ def cmd_test(name):
         print("  %-28s %s%s" % (when[:28], title, "  [" + link + "]" if link else ""))
 
 
+def known_calendars():
+    """(account, id, name, shown, editable, events) for every calendar, from the last sync."""
+    from omcal import sync
+    d = sync.read_json(os.path.join(sync.CACHE, "events.json"), {})
+    counts = {}
+    for e in d.get("events", []):
+        counts[(e["account"], e["calendar"])] = counts.get((e["account"], e["calendar"]), 0) + 1
+    return [(c["account"], c["id"], c["name"], c.get("shown", True), c.get("editable", False),
+             counts.get((c["account"], c["id"]), 0)) for c in d.get("calendars", [])]
+
+
+def cmd_calendars():
+    rows = known_calendars()
+    if not rows:
+        die("no calendars yet: run calendar-ctl sync first")
+    last = None
+    for acc, cid, name, shown, editable, n in rows:
+        if acc != last:
+            print("%s%s" % ("" if last is None else "\n", acc))
+            last, i = acc, 0
+        i += 1
+        print("  %2d  [%s] %-34s %s%s" % (i, "x" if shown else " ", name[:34],
+              "%d events" % n if shown else "hidden", "" if editable else ", read-only"))
+    print("\ncalendar-ctl hide|show <account> <number or name>")
+
+
+def cmd_choose(show, acc, which):
+    rows = [r for r in known_calendars() if r[0] == acc]
+    if not rows:
+        die("no calendars for %r (check calendar-ctl calendars)" % acc)
+    pick = rows[int(which) - 1] if which.isdigit() and 1 <= int(which) <= len(rows) else \
+        next((r for r in rows if r[2].lower() == which.lower()), None)
+    if not pick:
+        die("%s has no calendar %r" % (acc, which))
+    hidden = hidden_calendars()
+    ids = hidden.setdefault(acc, set())
+    (ids.discard if show else ids.add)(pick[1])
+    save_hidden(hidden)
+    print("%s %s: %s. Syncing..." % ("Showing" if show else "Hiding", acc, pick[2]))
+    from omcal import sync
+    sync.main(["sync", "--quiet"])
+
+
 def main(argv):
     if len(argv) < 2 or argv[1] in ("-h", "--help"):
         print(__doc__.strip())
@@ -75,6 +120,10 @@ def main(argv):
     elif cmd == "sync" and all(x in ("--full", "--quiet") for x in args):
         from omcal import sync
         sys.exit(sync.main(["sync"] + args))
+    elif cmd == "calendars" and not args:
+        cmd_calendars()
+    elif cmd in ("hide", "show") and len(args) == 2:
+        cmd_choose(cmd == "show", *args)
     elif cmd == "remove" and len(args) == 1:
         save_accounts([a for a in load_accounts() if a["name"] != args[0]])
         secret_clear(args[0])

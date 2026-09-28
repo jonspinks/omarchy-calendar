@@ -68,7 +68,12 @@ def sync_account(a, full, log):
             tok, prov = auth.google_access(a), google
         else:
             tok, prov = auth.ms_access(a), graph
-        cals = prov.calendars(tok)
+        # Hidden calendars are not fetched at all; their cached events go too,
+        # so a shown-again calendar starts with a full fetch.
+        hidden = auth.hidden_calendars().get(a["name"], set())
+        listed = prov.calendars(tok)
+        st["known"] = [dict(c, shown=c["id"] not in hidden) for c in listed]
+        cals = [c for c in listed if c["id"] not in hidden]
         keep = {c["id"] for c in cals}
         # A calendar that was removed or hidden takes its events with it.
         for cid in list(st["calendars"]):
@@ -125,10 +130,12 @@ def publish(accounts, states):
         out["accounts"].append({"name": a["name"], "provider": a["provider"], "email": a.get("email", ""),
                                 "status": st.get("status", "ok"), "error": st.get("error", ""),
                                 "lastSync": st.get("lastSync")})
-        for cid, c in st.get("calendars", {}).items():
-            out["calendars"].append({"account": a["name"], "id": cid, "name": c.get("name", ""),
+        # Every calendar the account has, shown or not, so the widget can offer
+        # the same choice as calendar-ctl hide/show.
+        for c in st.get("known", []):
+            out["calendars"].append({"account": a["name"], "id": c["id"], "name": c.get("name", ""),
                                      "color": c.get("color", ""), "primary": c.get("primary", False),
-                                     "editable": c.get("editable", False)})
+                                     "editable": c.get("editable", False), "shown": c.get("shown", True)})
         out["events"].extend(e for e in st.get("events", {}).values() if e["status"] != "cancelled")
     out["events"] = dedupe(out["events"], out["calendars"])
     out["events"].sort(key=sort_key)

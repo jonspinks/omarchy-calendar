@@ -67,6 +67,27 @@ def save_accounts(accounts):
     os.replace(tmp, ACCOUNTS)
 
 
+CHOICES = os.path.join(CONFIG_DIR, "calendars.json")
+
+
+def hidden_calendars():
+    """{account: set of calendar ids you've chosen not to see}. Not secret."""
+    try:
+        with open(CHOICES) as f:
+            return {k: set(v) for k, v in json.load(f).get("hidden", {}).items()}
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_hidden(hidden):
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    tmp = CHOICES + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"hidden": {k: sorted(v) for k, v in hidden.items() if v}}, f, indent=2)
+    os.replace(tmp, CHOICES)
+
+
 def account(name):
     for a in load_accounts():
         if a["name"] == name:
