@@ -103,6 +103,12 @@ class ReadingGraph(unittest.TestCase):
                          [("me@corp.example", True, True), ("bob@corp.example", False, False)])
         self.assertEqual(n["guests"][1]["response"], "needsAction")
 
+    def test_organiser_listed_as_a_guest_is_going(self):
+        e = m_event(attendees=[m_att("olive@corp.example", "none"), m_att("me@corp.example", "none")])
+        n = graph.normalise("W", MCAL, e, "me@corp.example")
+        self.assertEqual([(g["email"], g["organizer"], g["response"]) for g in n["guests"]],
+                         [("olive@corp.example", True, "accepted"), ("me@corp.example", False, "tentative")])
+
     def test_no_attendees_no_list(self):
         n = graph.normalise("W", MCAL, m_event(isOrganizer=True, attendees=[]), "me@corp.example")
         self.assertEqual(n["guests"], [])

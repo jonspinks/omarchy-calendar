@@ -33,6 +33,11 @@ work too: answer or rename the whole series, or just this one. If someone
 changed the event since you last synced, it tells you instead of
 overwriting their change.
 
+**See who's coming.** Open any meeting and the guest list is there: who
+said yes, maybe or no, and who hasn't answered yet, with the organiser
+first. On your own meetings, add people or take them off right there; they
+get the invitation or the cancellation when you save.
+
 ![An invitation, answered from the calendar](screenshots/3-invitation.png)
 
 **Reminders you can join from.** A few minutes before a meeting, a
@@ -118,6 +123,11 @@ ID. If the organisation requires admin consent, an admin has to grant it once.
 - **Click an event** to open it: edit it, delete it, answer it, open it in
   Google Calendar or Outlook, or join it. **New** (or `n`) starts one on the
   selected day.
+- **Guests:** an event lists everyone invited and their answers. On one you
+  can edit, **−** takes a guest off and the box below adds addresses (type
+  several, or press Enter after each). Nothing is sent until **Save**. From
+  a terminal: `calendar-ctl guests <uid>`, and `calendar-ctl update <uid>
+  --invite <email> --uninvite <email>`.
 - **Calendars:** click one in the list on the left to show or hide it. A
   hidden calendar isn't downloaded at all. `calendar-ctl choose` does the
   same in a checklist.
