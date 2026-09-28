@@ -882,7 +882,7 @@ Panel {
             draft: root.draft
             event: root.draftEvent
             calendars: root.editableCalendars
-            busy: root.writingUid !== ""
+            saving: root.writingUid !== ""
             error: root.editorError
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily

@@ -358,7 +358,8 @@ function indexEvents(data, use24h) {
         response: e.response, declined: e.response === "declined",
         allDay: e.allDay || day.label === "All day", start: e.start, end: e.end,
         organizer: !!e.organizer, recurring: !!e.recurring,
-        calendar: e.calendar, editable: !!e.editable && !!cinfo.editable
+        calendar: e.calendar, editable: !!e.editable && !!cinfo.editable,
+        busy: e.busy !== false
       })
     }
   }
@@ -592,6 +593,42 @@ function reminderText(r, calName, use24h) {
 }
 
 
+// ---- Next up: the meeting on now, or the next one within a week. All-day
+//      and declined events don't count; a meeting counts until it ends.
+function nextUp(byDay, now, use24h) {
+  var nowMs = now.getTime()
+  var key = keyForDate(now)
+  for (var d = 0; d < 8; d++) {
+    var rows = byDay[addDays(key, d)] || []
+    var best = null
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]
+      if (r.allDay || r.declined || String(r.start).length === 10) continue
+      var s = new Date(r.start).getTime(), e = new Date(r.end).getTime()
+      if (e <= nowMs) continue
+      if (!best || s < best.s) best = { row: r, s: s, e: e }
+    }
+    if (best) return { event: best.row, when: nextUpWhen(best.s, best.e, now, use24h), live: best.s <= nowMs,
+                       soon: best.s > nowMs && best.s - nowMs <= 15 * 60000 }
+  }
+  return null
+}
+
+function nextUpWhen(s, e, now, use24h) {
+  var nowMs = now.getTime()
+  var mins = Math.round((s - nowMs) / 60000)
+  if (s <= nowMs) {
+    var left = Math.max(1, Math.round((e - nowMs) / 60000))
+    return "Now · " + (left < 60 ? left + " min left" : "until " + clockLabel(new Date(e), use24h))
+  }
+  if (mins < 60) return "In " + Math.max(1, mins) + " min"
+  var start = new Date(s), dk = keyForDate(start), today = keyForDate(now)
+  var at = clockLabel(start, use24h)
+  if (dk === today) return (mins < 180 ? "In " + Math.floor(mins / 60) + " h " + (mins % 60) + " min · " : "Today · ") + at
+  if (dk === addDays(today, 1)) return "Tomorrow · " + at
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][start.getDay()] + " · " + at
+}
+
 // ---- The event editor. A draft is plain fields, as typed; draftArgs turns
 //      it into calendar-ctl arguments, sending only what changed.
 
@@ -628,7 +665,8 @@ function eventDraft(ev) {
   var d = {
     mode: "edit", uid: ev.uid, calendar: ev.account + "/" + ev.calendar,
     title: ev.title === "(no title)" ? "" : ev.title, location: ev.location || "",
-    allDay: String(ev.start).length === 10, invite: "", series: false, recurring: !!ev.recurring
+    allDay: String(ev.start).length === 10, invite: "", series: false, recurring: !!ev.recurring,
+    busy: ev.busy !== false
   }
   if (d.allDay) {
     d.date = ev.start; d.endDate = addDays(ev.end, -1); d.from = "09:00"; d.to = "10:00"
@@ -637,7 +675,7 @@ function eventDraft(ev) {
     d.date = keyForDate(s); d.endDate = keyForDate(e)
     d.from = clockInput(minutesOf(s)); d.to = clockInput(minutesOf(e))
   }
-  d.original = { title: d.title, location: d.location, allDay: d.allDay,
+  d.original = { title: d.title, location: d.location, allDay: d.allDay, busy: d.busy,
                  date: d.date, endDate: d.endDate, from: d.from, to: d.to }
   return d
 }
@@ -648,7 +686,7 @@ function newDraft(dayKey, now, calendarRef) {
   return { mode: "create", uid: "", calendar: calendarRef || "", title: "", location: "",
            allDay: false, date: dayKey, endDate: dayKey,
            from: clockInput(start), to: clockInput(Math.min(start + 60, 23 * 60 + 59)),
-           invite: "", series: false, recurring: false, original: null }
+           invite: "", series: false, recurring: false, busy: true, original: null }
 }
 
 // { args: [...] } for calendar-ctl, or { error: "what to fix" }.
@@ -674,6 +712,7 @@ function draftArgs(d) {
     if (!d.calendar) return { error: "Pick a calendar." }
     args = ["create", d.calendar, "--title", d.title, "--start", start, "--end", end]
     if (d.allDay) args.push("--all-day")
+    args.push(d.busy === false ? "--free" : "--busy")
     if (d.location) args.push("--location", d.location)
     var people = String(d.invite || "").split(/[\s,;]+/).filter(function(x) { return x })
     for (var i = 0; i < people.length; i++) {
@@ -686,6 +725,7 @@ function draftArgs(d) {
   args = ["update", d.uid]
   if (d.title !== o.title) args.push("--title", d.title)
   if (d.location !== o.location) args.push("--location", d.location)
+  if (d.busy !== o.busy) args.push(d.busy ? "--busy" : "--free")
   var timesChanged = d.allDay !== o.allDay || d.date !== o.date || d.endDate !== o.endDate
                      || (!d.allDay && (d.from !== o.from || d.to !== o.to))
   if (timesChanged) {

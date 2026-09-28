@@ -153,8 +153,12 @@ def calendar_of(ref):
     return a, cal
 
 
-def create(ref, title, start, end=None, all_day=False, location="", invite=()):
-    """A new event, and invitations to anyone named in invite. Returns its uid."""
+def create(ref, title, start, end=None, all_day=False, location="", invite=(), busy=None):
+    """A new event, and invitations to anyone named in invite. Returns its uid.
+
+    busy is how it shows to people checking your availability: busy by
+    default for a timed event, free for an all-day one, as both apps do.
+    """
     from datetime import timedelta
     from . import google, graph
     from .model import utc_iso
@@ -168,9 +172,12 @@ def create(ref, title, start, end=None, all_day=False, location="", invite=()):
     if e <= s:
         raise EditError("the end has to be after the start")
     title = title.strip() or "(no title)"
+    if busy is None:
+        busy = not all_day
     tok = token(a)
     if a["provider"] == "google":
         body = {"summary": title, "location": location,
+                "transparency": "opaque" if busy else "transparent",
                 "start": {"date": s.isoformat()} if all_day else {"dateTime": utc_iso(s)},
                 "end": {"date": e.isoformat()} if all_day else {"dateTime": utc_iso(e)},
                 "attendees": [{"email": m} for m in invite]}
@@ -179,7 +186,7 @@ def create(ref, title, start, end=None, all_day=False, location="", invite=()):
     else:
         zone = local_zone() if all_day else "UTC"
         stamp = (lambda d: d.isoformat() + "T00:00:00") if all_day else (lambda d: utc_iso(d)[:-1])
-        body = {"subject": title, "isAllDay": all_day,
+        body = {"subject": title, "isAllDay": all_day, "showAs": "busy" if busy else "free",
                 "start": {"dateTime": stamp(s), "timeZone": zone},
                 "end": {"dateTime": stamp(e), "timeZone": zone},
                 "location": {"displayName": location},
@@ -232,8 +239,8 @@ def _add(account, event):
 
 # ------------------------------------------------------------------ edit
 
-def update(uid, title=None, start=None, end=None, all_day=None, location=None, series=False):
-    """Change an event's title, times or place; None leaves a field as it is.
+def update(uid, title=None, start=None, end=None, all_day=None, location=None, series=False, busy=None):
+    """Change an event's title, times, place or free/busy; None leaves a field as it is.
 
     Guarded by the local copy's etag: if the event changed anywhere else since
     the last sync, nothing is written and Conflict says so. With series, the
@@ -278,6 +285,8 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
             body["summary"] = title.strip() or "(no title)"
         if location is not None:
             body["location"] = location
+        if busy is not None:
+            body["transparency"] = "opaque" if busy else "transparent"
         if timing:
             body["start"] = {"date": s.isoformat(), "dateTime": None} if ad else {"dateTime": utc_iso(s), "date": None}
             body["end"] = {"date": en.isoformat(), "dateTime": None} if ad else {"dateTime": utc_iso(en), "date": None}
@@ -289,6 +298,8 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
             body["subject"] = title.strip() or "(no title)"
         if location is not None:
             body["location"] = {"displayName": location}
+        if busy is not None:
+            body["showAs"] = "busy" if busy else "free"
         if timing:
             zone = local_zone() if ad else "UTC"
             stamp = (lambda d: d.isoformat() + "T00:00:00") if ad else (lambda d: utc_iso(d)[:-1])
@@ -299,7 +310,7 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
     if series:
         # The reply is the series itself; its occurrences come back with the sync.
         fields = {k: v for k, v in (("title", body.get("summary") or body.get("subject")),
-                                    ("location", location)) if v is not None}
+                                    ("location", location), ("busy", busy)) if v is not None}
         _apply(a["name"], lambda x: x.get("seriesId") == e["seriesId"], fields)
     else:
         new = (google if a["provider"] == "google" else graph).normalise(a["name"], cal, ev)

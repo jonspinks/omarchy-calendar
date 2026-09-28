@@ -15,7 +15,7 @@ Item {
   property var draft: null          // Model.newDraft / Model.eventDraft
   property var event: null          // the row it came from, or null for a new one
   property var calendars: []        // [{ value: "<account>/<id>", label }], editable ones
-  property bool busy: false
+  property bool saving: false
   property string error: ""
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
@@ -32,6 +32,8 @@ Item {
   readonly property bool recurring: !!event && event.recurring
 
   property bool allDay: false
+  property bool busy: true
+  property bool busyTouched: false
   property bool series: false
   property string calendarRef: ""
   property bool confirmingDelete: false
@@ -48,6 +50,8 @@ Item {
     fromField.text = draft.from
     toField.text = draft.to
     editor.allDay = draft.allDay
+    editor.busy = draft.busy !== false
+    editor.busyTouched = !editor.creating
     editor.series = false
     editor.calendarRef = draft.calendar
     editor.confirmingDelete = false
@@ -69,13 +73,14 @@ Item {
     d.from = fromField.text
     d.to = toField.text
     d.allDay = editor.allDay
+    d.busy = editor.busy
     d.series = editor.series
     d.calendar = editor.calendarRef
     return d
   }
 
   function submit() {
-    if (editor.busy) return
+    if (editor.saving) return
     if (editor.editable) editor.save(collect())
     else editor.cancel()
   }
@@ -104,7 +109,7 @@ Item {
   }
 
   component Field: TextField {
-    readOnly: !editor.editable || editor.busy
+    readOnly: !editor.editable || editor.saving
     foreground: editor.foreground
     font.family: editor.fontFamily
     Keys.onPressed: function(event) { editor.fieldKey(event) }
@@ -153,7 +158,35 @@ Item {
       foreground: editor.foreground
       fontFamily: editor.fontFamily
       titleSize: Style.font.body
-      onClicked: if (!editor.busy) editor.allDay = !editor.allDay
+      onClicked: {
+        if (editor.saving) return
+        editor.allDay = !editor.allDay
+        // A new all-day event shows as free, a timed one as busy, until chosen.
+        if (!editor.busyTouched) editor.busy = !editor.allDay
+      }
+    }
+
+    // How it shows to people checking your availability.
+    Row {
+      visible: editor.editable
+      spacing: Style.space(10)
+      Caption { anchors.verticalCenter: parent.verticalCenter; text: "SHOW AS"; width: Style.space(60) }
+      ButtonGroup {
+        options: [
+          { label: "Busy", value: "busy", tooltip: "Others see you as busy" },
+          { label: "Free", value: "free", tooltip: "Others see you as available" }
+        ]
+        value: editor.busy ? "busy" : "free"
+        focusable: false
+        foreground: editor.foreground
+        fontFamily: editor.fontFamily
+        fontSize: Style.font.bodySmall
+        onChanged: function(v) {
+          if (editor.saving) return
+          editor.busy = v === "busy"
+          editor.busyTouched = true
+        }
+      }
     }
 
     // Starts and ends. All-day events end on their last day, as people say it.
@@ -196,7 +229,7 @@ Item {
       foreground: editor.foreground
       fontFamily: editor.fontFamily
       titleSize: Style.font.body
-      onClicked: if (!editor.busy) editor.series = !editor.series
+      onClicked: if (!editor.saving) editor.series = !editor.series
     }
 
     // Someone else's event: answer it.
@@ -213,7 +246,7 @@ Item {
         Button {
           required property var modelData
           readonly property bool current: !!editor.event && editor.event.response === modelData.response
-          enabled: !editor.busy
+          enabled: !editor.saving
           bordered: true
           iconText: current ? "󰄵" : modelData.icon
           text: modelData.label
@@ -246,7 +279,7 @@ Item {
 
         Button {
           visible: !editor.creating && editor.editable
-          enabled: !editor.busy
+          enabled: !editor.saving
           bordered: editor.confirmingDelete
           iconText: "󰆴"
           text: editor.confirmingDelete ? (editor.series ? "Delete the series?" : "Really delete?") : "Delete"
@@ -295,10 +328,10 @@ Item {
 
         Button {
           visible: editor.editable
-          enabled: !editor.busy
+          enabled: !editor.saving
           bordered: true
-          iconText: editor.busy ? "󰑓" : "󰄬"
-          text: editor.busy ? "Saving…" : editor.creating ? "Create" : "Save"
+          iconText: editor.saving ? "󰑓" : "󰄬"
+          text: editor.saving ? "Saving…" : editor.creating ? "Create" : "Save"
           foreground: editor.foreground
           fontFamily: editor.fontFamily
           onClicked: editor.submit()

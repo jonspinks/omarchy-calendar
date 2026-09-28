@@ -12,9 +12,9 @@
     calendar-ctl remove <name>
     calendar-ctl respond <uid> accept|tentative|decline [--series]
     calendar-ctl create <account>/<calendar id> --title <t> --start <when> [--end <when>]
-                 [--all-day] [--location <text>] [--invite <email>]...
+                 [--all-day] [--location <text>] [--invite <email>]... [--busy | --free]
     calendar-ctl update <uid> [--title <t>] [--start <when>] [--end <when>]
-                 [--all-day | --timed] [--location <text>] [--series]
+                 [--all-day | --timed] [--location <text>] [--busy | --free] [--series]
     calendar-ctl delete <uid> [--series]
 
 A uid is as in events.json. Times are local ("2026-10-02 14:30") unless they
@@ -170,6 +170,8 @@ def event_options(args, cmd):
             opt.setdefault("invite", []).append(v)
         elif x in ("--all-day", "--timed"):
             opt["all_day"] = x == "--all-day"
+        elif x in ("--busy", "--free"):
+            opt["busy"] = x == "--busy"
         elif x == "--series":
             opt["series"] = True
         else:
