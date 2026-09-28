@@ -1,4 +1,8 @@
 #!/bin/bash
 # Sync every account's calendars into the private cache the widget reads.
 # Usage: calendar-sync [--full] [--quiet]   (see omcal/sync.py)
-cd "$(dirname "$(readlink -f "$0")")" && exec python3 -m omcal.sync "$@"
+#
+# -B: never write __pycache__ here. This folder is a live Omarchy plugin, and
+# the shell reloads a plugin whenever a file inside it changes, so bytecode
+# written on each sync would reload the calendar (closing its panel) every time.
+cd "$(dirname "$(readlink -f "$0")")" && exec python3 -B -m omcal.sync "$@"

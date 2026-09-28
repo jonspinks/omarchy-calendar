@@ -99,6 +99,44 @@ Panel {
   readonly property var problemAccounts: root.eventIndex.accounts.filter(function(a) { return a.status !== "ok" })
   property real lastSyncAt: 0
 
+  // ---- Views. Month is the stock grid; day, week and working week are time
+  //      grids; year is twelve small months. Remembered in shell.json.
+  readonly property var viewOptions: [
+    { label: "Day", value: "day", tooltip: "One day (1)" },
+    { label: "Week", value: "week", tooltip: "Seven days (2)" },
+    { label: "Work week", value: "workweek", tooltip: "Monday to Friday (3)" },
+    { label: "Month", value: "month", tooltip: "The month grid (4)" },
+    { label: "Year", value: "year", tooltip: "Twelve months (5)" }
+  ]
+  property string viewMode: Model.VIEWS.indexOf(String(setting("view", "month"))) >= 0 ? String(setting("view", "month")) : "month"
+  readonly property bool isTimeView: viewMode === "day" || viewMode === "week" || viewMode === "workweek"
+
+  function setView(v) {
+    if (Model.VIEWS.indexOf(v) < 0 || v === root.viewMode) return
+    root.viewMode = v
+    root.showSelectedMonth()
+    persistSettings({ view: v })
+  }
+
+  // Previous and Next: a month in the month view, otherwise the view's own unit.
+  function step(delta) {
+    if (root.viewMode === "month") { root.moveMonth(delta); return }
+    root.selectedKey = Model.stepAnchor(root.viewMode, root.selectedKey, delta)
+    root.showSelectedMonth()
+  }
+
+  function showSelectedMonth() {
+    var d = Model.keyToDate(root.selectedKey)
+    root.viewYear = d.getFullYear()
+    root.viewMonth = d.getMonth()
+  }
+
+  function openDay(key) {
+    root.selectedKey = key
+    root.setView("day")
+    root.showSelectedMonth()
+  }
+
   function ingest(text) {
     try {
       root.eventIndex = Model.indexEvents(JSON.parse(text), root.use24h)
@@ -216,6 +254,7 @@ Panel {
   function goToToday() {
     root.viewYear = today.getFullYear()
     root.viewMonth = today.getMonth()
+    root.selectedKey = root.todayKey
   }
 
   function moveMonth(delta) {
@@ -326,7 +365,8 @@ Panel {
     open: root.opened
     centerOnBar: true
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(560))
+    // Wider for a week of columns; the other views keep the stock width.
+    contentWidth: panel.fittedContentWidth(Style.space(root.viewMode === "week" || root.viewMode === "workweek" ? 900 : 560))
     contentHeight: panel.fittedContentHeight(calendarColumn.implicitHeight)
 
     PanelKeyCatcher {
@@ -334,15 +374,16 @@ Panel {
       anchors.fill: parent
       blocked: root.editingLife
       onMoveRequested: function(dx, dy) {
-        if (dx !== 0) root.moveMonth(dx)
-        if (dy !== 0) root.moveYear(dy)
+        if (dx !== 0) root.step(dx)
+        if (dy !== 0 && root.viewMode === "month") root.moveYear(dy)
       }
       onActivateRequested: root.goToToday()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
-        if (t === "[") root.moveMonth(-1)
-        else if (t === "]") root.moveMonth(1)
+        if (t >= "1" && t <= "5") root.setView(Model.VIEWS[Number(t) - 1])
+        else if (t === "[") root.step(-1)
+        else if (t === "]") root.step(1)
         else if (t === "{") root.moveYear(-1)
         else if (t === "}") root.moveYear(1)
         else if (t === "t" || t === "T") root.goToToday()
@@ -621,10 +662,60 @@ Panel {
             }
           }
 
+          // ---- Which view. Keys 1 to 5 do the same.
+          Item {
+            width: parent.width
+            height: viewSwitch.implicitHeight
+
+            ButtonGroup {
+              id: viewSwitch
+              anchors.horizontalCenter: parent.horizontalCenter
+              options: root.viewOptions
+              value: root.viewMode
+              focusable: false
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              fontSize: Style.font.bodySmall
+              onChanged: function(v) { root.setView(v) }
+            }
+          }
+
+          // ---- Day, week and working week.
+          TimeGrid {
+            visible: root.isTimeView
+            width: Math.min(parent.width, Style.space(root.viewMode === "day" ? 520 : 880))
+            anchors.horizontalCenter: parent.horizontalCenter
+            height: implicitHeight
+            days: Model.viewDays(root.viewMode, root.selectedKey, root.weekStart)
+            byDay: root.eventIndex.byDay
+            todayKey: root.todayKey
+            use24h: root.use24h
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            onOpenEvent: function(url) { root.openUrl(url) }
+            onJoinEvent: function(url) { root.openUrl(url) }
+            onPickDay: function(key) { root.openDay(key) }
+          }
+
+          // ---- The year.
+          YearView {
+            visible: root.viewMode === "year"
+            width: parent.width
+            height: implicitHeight
+            yearNumber: Model.keyToDate(root.selectedKey).getFullYear()
+            byDay: root.eventIndex.byDay
+            todayKey: root.todayKey
+            weekStart: root.weekStart
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            onPickDay: function(key) { root.openDay(key) }
+          }
+
           // ---- Month grid: week numbers down a gutter on the left, then
           //      the seven day columns. Always six rows, so the popup is
           //      exactly as tall in February as it is in August.
           Item {
+            visible: root.viewMode === "month"
             width: parent.width
             height: gridColumn.y + gridColumn.height
 
@@ -843,9 +934,11 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 // Fixed width so the chevrons hold still between a
                 // "MAY 2026" and a "SEPTEMBER 2026".
-                width: Style.space(130)
+                width: Style.space(root.viewMode === "month" ? 130 : 320)
                 horizontalAlignment: Text.AlignHCenter
-                text: Qt.formatDate(root.viewDate, "MMMM yyyy").toUpperCase()
+                text: (root.viewMode === "month"
+                  ? Qt.formatDate(root.viewDate, "MMMM yyyy")
+                  : Model.rangeTitle(root.viewMode, root.selectedKey, root.weekStart)).toUpperCase()
                 color: Qt.darker(root.contentForeground, 1.4)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -859,10 +952,10 @@ Panel {
                 anchors.leftMargin: -Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
                 iconText: "󰅁"
-                tooltipText: "Previous month"
+                tooltipText: "Previous " + ({day: "day", week: "week", workweek: "week", month: "month", year: "year"}[root.viewMode])
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
-                onClicked: root.moveMonth(-1)
+                onClicked: root.step(-1)
               }
 
               PanelActionButton {
@@ -870,16 +963,17 @@ Panel {
                 anchors.rightMargin: -Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
                 iconText: "󰅂"
-                tooltipText: "Next month"
+                tooltipText: "Next " + ({day: "day", week: "week", workweek: "week", month: "month", year: "year"}[root.viewMode])
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
-                onClicked: root.moveMonth(1)
+                onClicked: root.step(1)
               }
             }
           }
 
           // ---- The selected day's events. Every row opens the event in its
-          //      own calendar app; a meeting gets a Join button.
+          //      own calendar app; a meeting gets a Join button. The time
+          //      views show the events themselves, so they don't need it.
           Item {
             width: parent.width
             height: agenda.height
@@ -898,6 +992,7 @@ Panel {
               }
 
               Text {
+                visible: !root.isTimeView
                 textFormat: Text.PlainText
                 text: Model.dayTitle(root.selectedKey, root.todayKey).toUpperCase()
                 color: Qt.darker(root.contentForeground, 1.4)
@@ -907,7 +1002,7 @@ Panel {
               }
 
               Text {
-                visible: root.selectedEvents.length === 0
+                visible: !root.isTimeView && root.selectedEvents.length === 0
                 textFormat: Text.PlainText
                 text: "Nothing on."
                 color: Qt.darker(root.contentForeground, 1.9)
@@ -916,7 +1011,7 @@ Panel {
               }
 
               Repeater {
-                model: root.selectedEvents
+                model: root.isTimeView ? [] : root.selectedEvents
 
                 Rectangle {
                   id: eventRow

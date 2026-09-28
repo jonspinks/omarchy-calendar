@@ -385,6 +385,134 @@ function dayTitle(key, todayKey) {
 }
 
 
+// ---- Views: which days each shows, and where Previous and Next go.
+
+var VIEWS = ["day", "week", "workweek", "month", "year"]
+
+function keyToDate(key) {
+  var p = String(key).split("-")
+  return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]))
+}
+
+function weekStartKey(key, weekStart) {
+  var d = keyToDate(key)
+  var back = (d.getDay() - normalizedWeekStart(weekStart, 1) + 7) % 7
+  return addDays(key, -back)
+}
+
+function viewDays(view, anchorKey, weekStart) {
+  var days = []
+  if (view === "day") {
+    days = [anchorKey]
+  } else if (view === "week") {
+    var first = weekStartKey(anchorKey, weekStart)
+    for (var i = 0; i < 7; i++) days.push(addDays(first, i))
+  } else if (view === "workweek") {
+    // Monday to Friday of the week holding the anchor, whatever the week-start
+    // setting: a working week is a working week.
+    var d = keyToDate(anchorKey)
+    var monday = addDays(anchorKey, -((d.getDay() + 6) % 7))
+    for (var j = 0; j < 5; j++) days.push(addDays(monday, j))
+  }
+  return days
+}
+
+function stepAnchor(view, anchorKey, delta) {
+  var d = keyToDate(anchorKey)
+  if (view === "day") return addDays(anchorKey, delta)
+  if (view === "week" || view === "workweek") return addDays(anchorKey, 7 * delta)
+  if (view === "month") {
+    var m = new Date(d.getFullYear(), d.getMonth() + delta, 1)
+    return keyForDate(m)
+  }
+  return keyForDate(new Date(d.getFullYear() + delta, 0, 1))
+}
+
+var MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+function shortDay(key) {
+  var d = keyToDate(key)
+  return d.getDate() + " " + MONTHS_SHORT[d.getMonth()]
+}
+
+function rangeTitle(view, anchorKey, weekStart) {
+  var d = keyToDate(anchorKey)
+  if (view === "day") {
+    var names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    return names[d.getDay()] + " " + shortDay(anchorKey) + " " + d.getFullYear()
+  }
+  if (view === "week" || view === "workweek") {
+    var days = viewDays(view, anchorKey, weekStart)
+    // Numbered like the month grid's rows: by the ISO week owning Thursday.
+    var a = keyToDate(days[0])
+    for (var t = 0; t < days.length; t++)
+      if (keyToDate(days[t]).getDay() === 4) { a = keyToDate(days[t]); break }
+    return "Week " + isoWeek(a.getFullYear(), a.getMonth(), a.getDate()) + " · "
+      + shortDay(days[0]) + " – " + shortDay(days[days.length - 1])
+  }
+  if (view === "month") return ""
+  return String(d.getFullYear())
+}
+
+// A day's timed events as blocks on an hour grid: minutes from midnight, and
+// a column when meetings overlap, so they sit side by side, not on top.
+function dayLayout(events, dayKey) {
+  var dayStart = keyToDate(dayKey).getTime()
+  var dayEnd = keyToDate(addDays(dayKey, 1)).getTime()
+  var blocks = []
+  for (var i = 0; events && i < events.length; i++) {
+    var e = events[i]
+    if (e.allDay) continue
+    var s = Math.max(new Date(e.start).getTime(), dayStart)
+    var en = Math.min(new Date(e.end).getTime(), dayEnd)
+    if (!(en > s)) en = s + 15 * 60000
+    blocks.push({ event: e, top: (s - dayStart) / 60000, bottom: (en - dayStart) / 60000 })
+  }
+  blocks.sort(function(a, b) { return a.top - b.top || b.bottom - a.bottom })
+  // Greedy columns within each cluster of overlapping events.
+  var cluster = [], clusterEnd = -1
+  function flush() {
+    var cols = 0
+    for (var k = 0; k < cluster.length; k++) cols = Math.max(cols, cluster[k].column + 1)
+    for (var m = 0; m < cluster.length; m++) cluster[m].columns = cols
+    cluster = []
+  }
+  for (var j = 0; j < blocks.length; j++) {
+    var b = blocks[j]
+    if (b.top >= clusterEnd) { flush(); clusterEnd = -1 }
+    var used = {}
+    for (var c = 0; c < cluster.length; c++) if (cluster[c].bottom > b.top) used[cluster[c].column] = true
+    var col = 0
+    while (used[col]) col++
+    b.column = col
+    cluster.push(b)
+    clusterEnd = Math.max(clusterEnd, b.bottom)
+  }
+  flush()
+  return blocks
+}
+
+// The hours a time grid shows: at least 7am to 8pm, widened to fit any event.
+function hourRange(dayKeys, byDay) {
+  var first = 7, last = 20
+  for (var i = 0; i < dayKeys.length; i++) {
+    var blocks = dayLayout(byDay[dayKeys[i]] || [], dayKeys[i])
+    for (var j = 0; j < blocks.length; j++) {
+      first = Math.min(first, Math.floor(blocks[j].top / 60))
+      last = Math.max(last, Math.ceil(blocks[j].bottom / 60))
+    }
+  }
+  return { first: first, last: last }
+}
+
+// How busy a day is, 0-3, for the year view's shading.
+function busyLevel(events) {
+  var n = 0
+  for (var i = 0; events && i < events.length; i++) if (!events[i].declined) n++
+  return n === 0 ? 0 : n < 3 ? 1 : n < 6 ? 2 : 3
+}
+
+
 if (typeof module !== "undefined") {
   module.exports = {
     dateKey: dateKey,
@@ -414,6 +542,12 @@ if (typeof module !== "undefined") {
     addDays: addDays,
     eventDays: eventDays,
     indexEvents: indexEvents,
-    dayColors: dayColors
+    dayColors: dayColors,
+    viewDays: viewDays,
+    stepAnchor: stepAnchor,
+    rangeTitle: rangeTitle,
+    dayLayout: dayLayout,
+    hourRange: hourRange,
+    busyLevel: busyLevel
   }
 }
