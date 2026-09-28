@@ -131,6 +131,29 @@ Panel {
     root.viewMonth = d.getMonth()
   }
 
+  // The app layout (ModernLayout.qml) unless the setting asks for the stock one.
+  readonly property bool modern: String(setting("layout", "modern")) !== "classic"
+  readonly property bool syncing: syncProc.running
+
+  function pickDay(key) {
+    root.selectedKey = key
+    root.showSelectedMonth()
+  }
+
+  // Show or hide a calendar from the rail. The ctl saves the choice and syncs
+  // (a calendar shown again is fetched in full), and events.json follows.
+  function toggleCalendar(c) {
+    root.runWrite("cal:" + c.ref, [c.shown ? "hide" : "show", c.account, c.id])
+  }
+
+  function removeDraftEvent(series) {
+    root.runWrite(root.draftEvent.uid, ["delete", root.draftEvent.uid].concat(series ? ["--series"] : []))
+  }
+
+  function respondFromEditor(answer, series) {
+    root.runWrite(root.draftEvent.uid, ["respond", root.draftEvent.uid, answer].concat(series ? ["--series"] : []))
+  }
+
   function openDay(key) {
     root.selectedKey = key
     root.setView("day")
@@ -576,8 +599,12 @@ Panel {
     centerOnBar: true
     focusTarget: keyCatcher
     // Wider for a week of columns; the other views keep the stock width.
-    contentWidth: panel.fittedContentWidth(Style.space(root.viewMode === "week" || root.viewMode === "workweek" ? 900 : 560))
-    contentHeight: panel.fittedContentHeight(calendarColumn.implicitHeight)
+    // The app layout takes what the screen allows, up to a comfortable size;
+    // the stock one is sized by its content.
+    contentWidth: root.modern ? panel.fittedContentWidth(Style.space(1240))
+                : panel.fittedContentWidth(Style.space(root.viewMode === "week" || root.viewMode === "workweek" ? 900 : 560))
+    contentHeight: root.modern ? panel.fittedContentHeight(Style.space(780))
+                 : panel.fittedContentHeight(calendarColumn.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -601,8 +628,15 @@ Panel {
         else if (t === "n" || t === "N") root.newEvent()
       }
 
+      ModernLayout {
+        visible: root.modern
+        anchors.fill: parent
+        p: root
+      }
+
       Flickable {
         id: calendarScroll
+        visible: !root.modern
         anchors.fill: parent
         contentWidth: calendarColumn.width
         contentHeight: calendarColumn.implicitHeight
@@ -879,7 +913,7 @@ Panel {
             width: Math.min(parent.width, Style.space(520))
             anchors.horizontalCenter: parent.horizontalCenter
             height: visible ? implicitHeight : 0
-            draft: root.draft
+            draft: root.modern ? null : root.draft
             event: root.draftEvent
             calendars: root.editableCalendars
             saving: root.writingUid !== ""
@@ -888,14 +922,8 @@ Panel {
             fontFamily: root.contentFontFamily
             onSave: function(d) { root.saveDraft(d) }
             onCancel: root.closeEditor()
-            onRemove: function(series) {
-              root.runWrite(root.draftEvent.uid, ["delete", root.draftEvent.uid].concat(series ? ["--series"] : []))
-            }
-            onRespond: function(answer, series) {
-              root.editorError = ""
-              writeProc.fromEditor = true
-              root.runWrite(root.draftEvent.uid, ["respond", root.draftEvent.uid, answer].concat(series ? ["--series"] : []))
-            }
+            onRemove: function(series) { root.removeDraftEvent(series) }
+            onRespond: function(answer, series) { root.respondFromEditor(answer, series) }
             onOpenLink: function(url) { root.openUrl(url) }
           }
 

@@ -25,7 +25,7 @@ Item {
 
   readonly property int gutter: Style.space(46)
   readonly property int hourHeight: Style.space(40)
-  readonly property int visibleHours: 11
+  property int visibleHours: 11
   readonly property real colWidth: days.length ? (width - gutter) / days.length : 0
   readonly property var hours: Model.hourRange(days, byDay)
   readonly property int allDayRows: {

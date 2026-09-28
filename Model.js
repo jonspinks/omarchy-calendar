@@ -334,13 +334,24 @@ function indexEvents(data, use24h) {
     accounts.push(list[i])
   }
   var cals = (data && data.calendars) || []
+  var calendarList = []
   for (var c = 0; c < cals.length; c++) {
     var cal = cals[c]
     calendars[cal.account + "/" + cal.id] = {
       name: cal.name, shown: cal.shown !== false, editable: !!cal.editable,
       color: colorFor(cal, accountIndex[cal.account] || 0)
     }
+    calendarList.push({ account: cal.account, id: cal.id, ref: cal.account + "/" + cal.id,
+                        name: cal.name || cal.id, primary: !!cal.primary, shown: cal.shown !== false,
+                        color: calendars[cal.account + "/" + cal.id].color })
   }
+  // The rail's list: by account in their own order, each one's main calendar first.
+  calendarList.sort(function(a, b) {
+    var ai = accountIndex[a.account] || 0, bi = accountIndex[b.account] || 0
+    if (ai !== bi) return ai - bi
+    if (a.primary !== b.primary) return a.primary ? -1 : 1
+    return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1
+  })
   var byDay = {}
   var evs = (data && data.events) || []
   for (var j = 0; j < evs.length; j++) {
@@ -365,7 +376,7 @@ function indexEvents(data, use24h) {
   }
   for (var key in byDay)
     byDay[key].sort(function(a, b) { return a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : (a.title < b.title ? -1 : 1) })
-  return { calendars: calendars, byDay: byDay, accounts: accounts }
+  return { calendars: calendars, calendarList: calendarList, byDay: byDay, accounts: accounts }
 }
 
 // Up to `max` distinct colours for a day's dots, in the day's own order.

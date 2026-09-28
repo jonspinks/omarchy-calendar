@@ -8,7 +8,7 @@
     calendar-ctl sync [--full]        # bring the local copy up to date
     calendar-ctl calendars            # every calendar, and which are shown
     calendar-ctl choose               # pick them all at once, in a checklist
-    calendar-ctl hide|show <account> <number or name>
+    calendar-ctl hide|show <account> <number, name or id>
     calendar-ctl remove <name>
     calendar-ctl respond <uid> accept|tentative|decline [--series]
     calendar-ctl create <account>/<calendar id> --title <t> --start <when> [--end <when>]
@@ -140,7 +140,7 @@ def cmd_choose(show, acc, which):
     if not rows:
         die("no calendars for %r (check calendar-ctl calendars)" % acc)
     pick = rows[int(which) - 1] if which.isdigit() and 1 <= int(which) <= len(rows) else \
-        next((r for r in rows if r[2].lower() == which.lower()), None)
+        next((r for r in rows if r[1] == which or r[2].lower() == which.lower()), None)
     if not pick:
         die("%s has no calendar %r" % (acc, which))
     hidden = hidden_calendars()

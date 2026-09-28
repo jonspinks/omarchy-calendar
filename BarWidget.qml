@@ -81,6 +81,13 @@ BarWidget {
     panelLoader.item.newEvent()
   }
 
+  // Opens the panel in a view: day, week, workweek, month or year.
+  function showView(name) {
+    if (!panelLoader.item) return
+    panelLoader.item.open()
+    panelLoader.item.setView(name)
+  }
+
   function toggleWeekStart() {
     if (panelLoader.item) panelLoader.item.toggleWeekStart()
   }
@@ -146,6 +153,7 @@ BarWidget {
     function hide(): void { root.close() }
     function toggle(): void { root.togglePanel() }
     function newEvent(): void { root.newEvent() }
+    function view(name: string): void { root.showView(name) }
   }
 
   WidgetButton {
