@@ -27,8 +27,7 @@ line for right now.
 
 ![A week, with the next meeting and its Join button in the corner](screenshots/2-week.png)
 
-**It's two-way** (for Google and Microsoft; Fastmail and CalDAV are
-read-only for now). Answer invitations with Accept, Maybe or Decline, and the
+**It's two-way**, for every kind of account. Answer invitations with Accept, Maybe or Decline, and the
 organiser gets your reply. Create events (with guests if you like), move
 them, rename them, set them busy or free, delete them. Recurring meetings
 work too: answer or rename the whole series, or just this one. If someone
@@ -117,10 +116,17 @@ Any other CalDAV server works the same way, given its calendar home:
 $C add-caldav Nextcloud --url https://cloud.example.com/remote.php/dav/calendars/me/ --user me
 ```
 
-These accounts are read-only for now: their events show, remind and join
-like any other, but answering, creating, editing and deleting are for
-Google and Microsoft accounts until a later version. Make those changes in
-Fastmail itself, and they arrive with the next sync.
+These accounts are two-way like the others, on any calendar the server
+lets you write to. The emails are the server's job: Fastmail (like most
+CalDAV servers) schedules on its side, so when you save an event with
+guests it sends them the invitation, update or cancellation, and when you
+answer an invitation it sends the organiser your reply. Datebook never
+sends mail itself. Deleting someone else's invitation only takes it off
+your calendar; decline it to tell them.
+
+An edit changes only what you changed: the event is read from the server,
+just those lines are rewritten, and everything else in it (alarms, time
+zones, notes other apps keep there) goes back exactly as it was.
 
 ### Registering the apps
 
@@ -205,7 +211,8 @@ files, and no services: sync and reminders run inside the shell.
 `singleEvents` and kept current with `updatedMin`; Microsoft uses Graph's
 `calendarView/delta`; CalDAV asks the server to expand each calendar's
 series in the window, and fetches a calendar again only when its ctag has
-changed. A copy of the next four months (and the last five weeks)
+changed. A CalDAV change reads the event's `.ics` file, patches only the
+lines being changed, and puts it back guarded by its ETag. A copy of the next four months (and the last five weeks)
 lives in `~/.cache/blacksheep.calendar/`, and the widget reads one file from
 it. Every change you make is written straight to the provider, guarded by the
 event's etag, then applied to the local copy at once, before the next sync
@@ -213,7 +220,8 @@ confirms it. Times are kept in UTC, and only turned into local time on screen.
 
 `tests/run.sh` runs the tests: the widget's date, editing, reminder and
 "next up" logic under node, and the sync's link-finding, time parsing,
-de-duplication, iCalendar and CalDAV reading under Python.
+de-duplication, iCalendar reading and writing, and CalDAV sync and editing
+(against a fake server) under Python.
 
 ## License
 

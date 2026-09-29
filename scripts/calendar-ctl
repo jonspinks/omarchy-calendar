@@ -38,8 +38,8 @@ Google signs in through the browser (installed-app flow with PKCE, redirected
 to a one-shot listener on 127.0.0.1). Microsoft uses the device-code flow: no
 listener, no browser redirect, and nothing to paste but a short code.
 Fastmail and other CalDAV servers take an app password, asked for at the
-prompt (never on the command line). CalDAV accounts are read-only for now:
-respond, create, update and delete are for Google and Microsoft.
+prompt (never on the command line). respond, create, update and delete work
+for every account; for CalDAV, the server sends the invitations and replies.
 """
 
 import os
