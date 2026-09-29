@@ -3,7 +3,7 @@
 *Last updated: 28 September 2026*
 
 Datebook (Omarchy Calendar) is a desktop calendar for the Omarchy Linux desktop. It shows
-your Google Calendar and Microsoft 365 events in the desktop's calendar, sends
+your Google Calendar, Microsoft 365 and Fastmail (or other CalDAV) events in the desktop's calendar, sends
 meeting reminders, and lets you create, edit, delete and respond to events, and see and change who
 is invited.
 It is open source: everything it does is in this repository.
@@ -17,6 +17,9 @@ Microsoft's own sign-in page:
   plus your email address, to show which account is signed in.
 - **Microsoft 365:** `Calendars.ReadWrite` and `User.Read`, plus
   `offline_access`, so it can stay signed in.
+- **Fastmail and other CalDAV servers:** an app password you create for it,
+  with calendar (CalDAV) access only. Fastmail accounts are read, never
+  written, for now.
 
 It uses that access only to show your events, remind you about them, and make
 the changes you ask it to make. It doesn't read email, contacts, files or
@@ -26,12 +29,15 @@ anything else.
 
 Nowhere but your own computer. Datebook has no server, and no one
 operates a service behind it: it runs entirely on your machine and talks
-directly to Google's and Microsoft's calendar APIs.
+directly to Google's and Microsoft's calendar APIs, and for Fastmail to
+`caldav.fastmail.com` only (or to the CalDAV address you give it).
 
-- **Sign-in tokens** are stored in your system keyring (the GNOME keyring,
-  through `secret-tool`), never in a plain file.
-- **Account settings** that aren't secret (account names, and the IDs of the
-  Google or Microsoft app you signed in through) are kept in
+- **Sign-in tokens**, and a CalDAV account's app password, are stored in your
+  system keyring (the GNOME keyring, through `secret-tool`), never in a plain
+  file.
+- **Account settings** that aren't secret (account names, the IDs of the
+  Google or Microsoft app you signed in through, and a CalDAV account's
+  address and user name) are kept in
   `~/.config/blacksheep.calendar/`, readable only by you.
 - **A copy of your events** is kept in your user cache, readable only by you,
   so the calendar can show them instantly and work offline. It includes each
@@ -52,7 +58,8 @@ to anyone, and never used for advertising, analytics or training.
   are safe to delete.
 - You can revoke its access at any time: for Google at
   <https://myaccount.google.com/permissions>, and for Microsoft at
-  <https://myaccount.microsoft.com> under *App permissions*.
+  <https://myaccount.microsoft.com> under *App permissions*, and for Fastmail
+  by revoking the app password under Settings → Privacy & Security.
 
 ## Use of Google user data
 
