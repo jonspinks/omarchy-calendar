@@ -45,8 +45,6 @@ Item {
   }
   readonly property bool invitation: !!event && !event.organizer
   readonly property bool removable: !!event && (event.editable || event.calendarEditable)
-  // An invitation this account can answer from here (not a CalDAV one, yet).
-  readonly property bool answerable: invitation && event.answerable !== false
   readonly property bool recurring: !!event && event.recurring
 
   property bool allDay: false
@@ -541,7 +539,7 @@ Item {
     }
 
     Toggle {
-      visible: editor.recurring && (editor.editable || editor.answerable)
+      visible: editor.recurring && (editor.editable || editor.invitation)
       width: parent.width
       label: "Every occurrence"
       description: editor.editable ? "Title, place, guests and delete apply to the whole series; times move one at a time"
@@ -555,7 +553,7 @@ Item {
 
     // Someone else's event: answer it.
     Row {
-      visible: editor.answerable
+      visible: editor.invitation && !!editor.event
       spacing: Style.space(6)
 
       Repeater {
