@@ -36,9 +36,12 @@ Item {
     width: parent.width
     height: Style.space(34)
 
+    // The title follows the arrows, not the other way round: its length
+    // changes as you step, and the arrows stay put under the pointer.
     Text {
       id: titleText
-      anchors.left: parent.left
+      anchors.left: navRow.right
+      anchors.leftMargin: layout.gap
       anchors.verticalCenter: parent.verticalCenter
       width: Math.min(implicitWidth, parent.width - navRow.width - rightRow.width - layout.gap * 3)
       elide: Text.ElideRight
@@ -52,8 +55,7 @@ Item {
 
     Row {
       id: navRow
-      anchors.left: titleText.right
-      anchors.leftMargin: layout.gap
+      anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(2)
 
