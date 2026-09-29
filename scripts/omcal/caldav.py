@@ -1,4 +1,4 @@
-"""CalDAV (RFC 4791): Fastmail, and any other server that speaks it. Read-only for now.
+"""CalDAV (RFC 4791): Fastmail, and any other server that speaks it.
 
 Signing in is HTTP Basic with an app password, kept in the keyring like the
 other providers' refresh tokens. The account's calendar home (Fastmail's is
@@ -18,6 +18,9 @@ ical.occurrences() expands it here instead.
 
 XML is read by namespace, never by prefix: servers pick their own prefixes
 (Fastmail's replies don't use "d:").
+
+Each event keeps the address of the resource (the .ics file) it came from, so
+that davedit.py can read it whole, patch it and put it back.
 """
 
 import base64
@@ -62,6 +65,31 @@ class Session:
     def __repr__(self):   # never the password, in a traceback or a log
         return "Session(%r, %r)" % (self.url, self.user)
 
+    def send(self, method, url, body=None, headers=None):
+        """One request: (status, {lower-case header: value}, reply bytes).
+
+        401 is a sign-in problem; 412 is a conflict (an If-Match or
+        If-None-Match didn't hold, so nothing was written); any other error
+        status is an HttpError with its code.
+        """
+        check_url(url)
+        cred = base64.b64encode(("%s:%s" % (self.user, self.password)).encode()).decode()
+        h = {"Authorization": "Basic " + cred}
+        h.update(headers or {})
+        req = urllib.request.Request(url, data=body, method=method, headers=h)
+        host = urllib.parse.urlsplit(url).netloc
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, {k.lower(): v for k, v in r.headers.items()}, files.read_reply(r)
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                e.close()
+                raise auth.AuthError("%s refused the saved password (a revoked app password?)" % host)
+            if e.code == 412:
+                e.close()
+                raise auth.Conflict("the event was changed elsewhere; sync and try again")
+            raise auth.HttpError(host, e.code, auth.error_text(e))
+
 
 def login(a):
     """The saved sign-in for a caldav account, as a Session."""
@@ -80,20 +108,8 @@ def check_url(url):
 
 def _request(session, method, url, body, depth):
     """One WebDAV request; the reply's raw bytes (a 207 multistatus, usually)."""
-    check_url(url)
-    cred = base64.b64encode(("%s:%s" % (session.user, session.password)).encode()).decode()
-    req = urllib.request.Request(url, data=body.encode(), method=method, headers={
-        "Authorization": "Basic " + cred, "Depth": str(depth),
-        "Content-Type": "application/xml; charset=utf-8"})
-    host = urllib.parse.urlsplit(url).netloc
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return files.read_reply(r)
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            e.close()
-            raise auth.AuthError("%s refused the saved password (a revoked app password?)" % host)
-        raise auth.HttpError(host, e.code, auth.error_text(e))
+    return session.send(method, url, body.encode(), {
+        "Depth": str(depth), "Content-Type": "application/xml; charset=utf-8"})[2]
 
 
 def dav(session, method, url, body, depth):
@@ -165,10 +181,7 @@ def calendars(session):
         out.append({"id": seg, "href": href,
                     "name": (_text(props, DAV, "displayname") or seg),
                     "color": colour(_text(props, APPLE, "calendar-color")),
-                    "primary": False,
-                    # Phase 1 is read-only: nothing is offered for editing,
-                    # whatever the server would allow. writable is kept for later.
-                    "editable": False, "writable": writable,
+                    "primary": False, "editable": writable,
                     "ctag": _text(props, CS, "getctag"), "syncToken": _text(props, DAV, "sync-token")})
     if out:
         pick = next((c for c in out if default and c["href"].rstrip("/") == default.rstrip("/")), out[0])
@@ -189,13 +202,20 @@ def colour(text):
     return t if len(t) == 7 and t.startswith("#") else ""
 
 
+# The shape of the events a cursor was fetched with. Bumped when they gain a
+# field (2: href and recurrenceId, for writing back), so every calendar is
+# fetched again once, not left without it until something in it changes.
+SHAPE = 2
+
+
 def cursor(cal):
     """The tag that changes whenever anything in the calendar does, or None.
 
     A server that offers neither has no cursor, so its calendars are fetched
     whole on every pass.
     """
-    return cal.get("ctag") or cal.get("syncToken") or None
+    tag = cal.get("ctag") or cal.get("syncToken")
+    return "%d:%s" % (SHAPE, tag) if tag else None
 
 
 # ----------------------------------------------------------------- events
@@ -236,7 +256,7 @@ def fetch(account, session, cal, window, since=None, me=""):
         if not data:
             continue
         try:
-            events.extend(resource_events(account, cal, data, _text(props, DAV, "getetag"), window, me))
+            events.extend(resource_events(account, cal, data, _text(props, DAV, "getetag"), window, me, href))
         except (ValueError, IndexError, KeyError) as e:
             # One unreadable event (a mangled date, say) is skipped, not
             # allowed to stop the calendar, or every other account, syncing.
@@ -244,8 +264,10 @@ def fetch(account, session, cal, window, since=None, me=""):
     return events, [], cursor(cal)
 
 
-def resource_events(account, cal, data, etag, window, me=""):
+def resource_events(account, cal, data, etag, window, me="", href=""):
     """Every event in one calendar object resource that overlaps the window.
+
+    href is the resource's own address, kept on each event for writing back.
 
     An expanded series arrives as one VEVENT per occurrence, each with its
     RECURRENCE-ID. One still carrying its RRULE is expanded here, with its
@@ -274,7 +296,7 @@ def resource_events(account, cal, data, etag, window, me=""):
         for s in starts:
             if _overlaps(s, s + span, lo, hi):
                 out.append(normalise(account, cal, v, s, s + span, etag, me,
-                                     occurrence=s if series else None))
+                                     occurrence=s if series else None, href=href))
     return out
 
 
@@ -323,11 +345,14 @@ def guests(v, me):
     return guest_fields(out), mine
 
 
-def normalise(account, cal, v, start, end, etag="", me="", occurrence=None):
+def normalise(account, cal, v, start, end, etag="", me="", occurrence=None, href=""):
     """One VEVENT, at one of its occurrences, in the model's shape.
 
     occurrence is set when the start came from expanding a rule here; an
     occurrence the server expanded carries its own RECURRENCE-ID instead.
+    It can be changed from here when the calendar can be written and the
+    event is yours: organised by you, or with nobody else on it. Someone
+    else's invitation is answered, not edited.
     """
     me = (me or "").lower()
     uid = v.value("UID")
@@ -364,9 +389,11 @@ def normalise(account, cal, v, start, end, etag="", me="", occurrence=None):
         "busy": v.value("TRANSP").upper() != "TRANSPARENT",
         "recurring": rid_key is not None or bool(v.value("RRULE")),
         "seriesId": uid if rid_key is not None or v.value("RRULE") else None,
-        "editable": False,
+        "editable": bool(cal.get("editable")) and organizer,
         "webLink": "",
         "etag": etag,
+        "href": href,
+        "recurrenceId": rid_key,
         "remind": reminders(v),
         **fields,
     }

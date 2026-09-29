@@ -115,12 +115,11 @@ class Listing(unittest.TestCase):
         self.assertEqual((personal["name"], personal["color"], personal["ctag"]), ("Personal", "#3A429C", "ctag-1"))
         self.assertEqual(personal["syncToken"], "")   # a 404 propstat is not a blank value
         self.assertEqual(personal["href"], HOME + "Default/")
-        self.assertTrue(personal["writable"])
-        self.assertFalse(work["writable"])
-        self.assertFalse(any(c["editable"] for c in cals))   # read-only, phase 1
+        # Editable where the server grants write; Work grants only read.
+        self.assertEqual([c["editable"] for c in cals], [True, False])
         # The default calendar, named on the Inbox, is the primary one.
         self.assertEqual([c["primary"] for c in cals], [False, True])
-        self.assertEqual(caldav.cursor(work), "https://example.com/sync/7")
+        self.assertEqual(caldav.cursor(work), "2:https://example.com/sync/7")
 
     def test_401_is_a_sign_in_problem(self):
         import io
@@ -337,14 +336,14 @@ class Syncing(unittest.TestCase):
         st = self.run_sync("c1", one)
         self.assertEqual((st["status"], self.reports), ("ok", 1))
         self.assertEqual(list(st["events"]), ["F/work/u1"])
-        self.assertEqual(st["calendars"]["work"]["cursor"], "c1")
+        self.assertEqual(st["calendars"]["work"]["cursor"], "2:c1")
         st = self.run_sync("c1", [])   # the server would say nothing is there: never asked
         self.assertEqual((self.reports, list(st["events"])), (1, ["F/work/u1"]))
         # A moved ctag refetches the calendar whole: what's gone is gone.
         two = ["BEGIN:VEVENT\nUID:u2\nDTSTART:20261004T120000Z\nSUMMARY:Two\nEND:VEVENT"]
         st = self.run_sync("c2", two)
         self.assertEqual((self.reports, list(st["events"])), (2, ["F/work/u2"]))
-        self.assertEqual(st["calendars"]["work"]["cursor"], "c2")
+        self.assertEqual(st["calendars"]["work"]["cursor"], "2:c2")
         st = self.run_sync("c2", two, full=True)   # --full always fetches
         self.assertEqual(self.reports, 3)
 
@@ -358,7 +357,10 @@ class Syncing(unittest.TestCase):
                                                "primary": True, "editable": False, "shown": True})
         [e] = out["events"]
         self.assertEqual((e["uid"], e["etag"], e["alsoIn"]), ("F/work/meet-1@example.com", '"e9"', []))
-        self.assertEqual(set(e) - {"alsoIn"}, set(_google_shape()))
+        self.assertEqual(e["href"], "https://caldav.example.com/dav/work/x.ics")
+        self.assertIsNone(e["recurrenceId"])
+        # The model's shape, plus the two fields only CalDAV needs for writing back.
+        self.assertEqual(set(e) - {"alsoIn", "href", "recurrenceId"}, set(_google_shape()))
         self.assertTrue(os.path.exists(os.path.join(self.dir, "events.json")))
 
     def test_a_broken_event_is_skipped(self):
@@ -380,19 +382,12 @@ def _google_shape():
                             {"id": "1", "start": {"date": "2026-10-01"}, "end": {"date": "2026-10-02"}})
 
 
-class ReadOnly(unittest.TestCase):
-    def test_every_write_is_refused(self):
-        a = {"name": "F", "provider": "caldav", "email": ME, "url": HOME}
-        e = {"uid": "F/work/u1", "calendar": "work", "organizer": False, "editable": False, "seriesId": None}
-        st = {"calendars": {"work": dict(CAL, editable=True)}, "events": {"F/work/u1": e}}
-        with mock.patch.object(auth, "load_accounts", return_value=[a]), \
-                mock.patch.object(sync, "read_json", return_value=st):
-            for call in (lambda: edit.respond("F/work/u1", "accept"),
-                         lambda: edit.update("F/work/u1", title="x"),
-                         lambda: edit.delete("F/work/u1"),
-                         lambda: edit.create("F/work", "x", "2026-10-02 10:00")):
-                with self.assertRaisesRegex(edit.EditError, "not supported for CalDAV"):
-                    call()
+class Upgrade(unittest.TestCase):
+    def test_a_phase_1_cursor_fetches_once_more(self):
+        # State saved before events had an href holds the bare ctag; it no
+        # longer matches, so each calendar is read again and gains them.
+        self.assertNotEqual(caldav.cursor({"ctag": "c1"}), "c1")
+        self.assertIsNone(caldav.cursor({}))
 
 
 if __name__ == "__main__":

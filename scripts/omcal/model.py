@@ -30,6 +30,15 @@ A normalised event:
     guestsHidden True when the organiser has hidden the list from guests, so
                  it holds only you
 
+CalDAV events carry two more, for writing back (other providers name the
+event by its id instead):
+
+    href         the calendar object resource (the .ics file) that holds it;
+                 every occurrence of a series shares its series' resource
+    recurrenceId which occurrence of a series this is, as its RECURRENCE-ID
+                 in UTC ("20261005T140000Z") or as a date ("20261005");
+                 None for an event that doesn't repeat
+
 Both providers are asked for end-exclusive all-day dates, and timed events are
 kept as UTC instants: local time is applied only when something is displayed,
 so a time-zone change never rewrites the cache.
