@@ -18,8 +18,10 @@ Microsoft's own sign-in page:
 - **Microsoft 365:** `Calendars.ReadWrite` and `User.Read`, plus
   `offline_access`, so it can stay signed in.
 - **Fastmail and other CalDAV servers:** an app password you create for it,
-  with calendar (CalDAV) access only. Fastmail accounts are read, never
-  written, for now.
+  with calendar (CalDAV) access only. Changes you make are written back to
+  your calendars there; the server itself (Fastmail's, or yours) sends any
+  invitations, updates, cancellations or replies those changes call for, to
+  the people on the event. Datebook sends no email.
 
 It uses that access only to show your events, remind you about them, and make
 the changes you ask it to make. It doesn't read email, contacts, files or
