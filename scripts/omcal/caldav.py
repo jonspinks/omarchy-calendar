@@ -2,8 +2,8 @@
 
 Signing in is HTTP Basic with an app password, kept in the keyring like the
 other providers' refresh tokens. The account's calendar home (Fastmail's is
-https://caldav.fastmail.com/dav/calendars/user/<email>/) is listed with one
-PROPFIND; each calendar in it is fetched with a calendar-query REPORT that asks
+https://caldav.fastmail.com/dav/calendars/user/<email>/; iCloud's is found by
+asking caldav.icloud.com, see home()) is listed with one PROPFIND; each calendar in it is fetched with a calendar-query REPORT that asks
 the server to expand series into occurrences inside the window, the same
 shape Google's singleEvents and Graph's calendarView hand back.
 
@@ -34,6 +34,7 @@ from . import auth, files, ical
 from .model import find_join, guest, guest_fields, utc_iso
 
 FASTMAIL = "https://caldav.fastmail.com/dav/calendars/user/%s/"
+ICLOUD = "https://caldav.icloud.com/"
 
 DAV, CAL = "DAV:", "urn:ietf:params:xml:ns:caldav"
 CS, APPLE = "http://calendarserver.org/ns/", "http://apple.com/ns/ical/"
@@ -140,6 +141,43 @@ def multistatus(raw, base):
                     props[p.tag] = p
         out.append((urllib.parse.urljoin(base, href), props))
     return out
+
+
+# -------------------------------------------------------------- discovery
+
+FIND = """<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop><d:current-user-principal/><c:calendar-home-set/></d:prop>
+</d:propfind>"""
+
+
+def _href(props, ns, name):
+    el = props.get(_t(ns, name))
+    return (el.findtext(_t(DAV, "href")) or "").strip() if el is not None else ""
+
+
+def home(session):
+    """The account's calendar home, from wherever session.url points.
+
+    Fastmail's address already is the home. iCloud's isn't knowable ahead of
+    time: each account lives on its own server under a number, so the start
+    (https://caldav.icloud.com/) is asked who is signed in (the principal),
+    and the principal where its calendars are (RFC 4791 section 6.2.1). An
+    address that answers neither is taken to be the home itself.
+    """
+    url, seen = session.url, set()
+    while url not in seen and len(seen) < 3:
+        seen.add(url)
+        found = dav(session, "PROPFIND", url, FIND, 0)
+        props = next((p for h, p in found if h.rstrip("/") == url.rstrip("/")), found[0][1] if found else {})
+        got = _href(props, CAL, "calendar-home-set")
+        if got:
+            return urllib.parse.urljoin(url, got)
+        principal = _href(props, DAV, "current-user-principal")
+        if not principal:
+            break
+        url = urllib.parse.urljoin(url, principal)
+    return session.url
 
 
 # -------------------------------------------------------------- calendars

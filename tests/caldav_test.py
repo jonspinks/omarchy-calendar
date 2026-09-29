@@ -403,3 +403,45 @@ class Upgrade(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Discovery(unittest.TestCase):
+    """Finding the calendar home: iCloud's two hops, and a home that is its own answer."""
+
+    class Fake:
+        def __init__(self, url, replies):
+            self.url, self.replies, self.asked = url, replies, []
+
+        def send(self, method, url, body=None, headers=None):
+            self.asked.append((method, url, headers.get("Depth")))
+            return 207, {}, self.replies.get(url, b'<multistatus xmlns="DAV:"/>')
+
+    @staticmethod
+    def ms(href, prop):
+        return ('<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:response>'
+                '<D:href>%s</D:href><D:propstat><D:prop>%s</D:prop><D:status>HTTP/1.1 200 OK</D:status>'
+                '</D:propstat></D:response></D:multistatus>' % (href, prop)).encode()
+
+    def test_icloud_principal_then_home(self):
+        root = "https://caldav.icloud.com/"
+        s = self.Fake(root, {
+            root: self.ms("/", "<D:current-user-principal><D:href>/1234567/principal/</D:href>"
+                               "</D:current-user-principal>"),
+            root + "1234567/principal/": self.ms(
+                "/1234567/principal/", "<C:calendar-home-set><D:href>https://p42-caldav.icloud.com:443/1234567/"
+                                       "calendars/</D:href></C:calendar-home-set>"),
+        })
+        self.assertEqual(caldav.home(s), "https://p42-caldav.icloud.com:443/1234567/calendars/")
+        self.assertEqual([a[2] for a in s.asked], ["0", "0"])
+
+    def test_a_home_that_says_nothing_is_the_home(self):
+        home = "https://caldav.fastmail.com/dav/calendars/user/me@example.com/"
+        s = self.Fake(home, {})
+        self.assertEqual(caldav.home(s), home)
+
+    def test_a_principal_pointing_at_itself_stops(self):
+        url = "https://dav.example.com/p/"
+        s = self.Fake(url, {url: self.ms("/p/", "<D:current-user-principal><D:href>/p/</D:href>"
+                                                "</D:current-user-principal>")})
+        self.assertEqual(caldav.home(s), url)
+        self.assertEqual(len(s.asked), 1)

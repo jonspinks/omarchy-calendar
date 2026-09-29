@@ -318,6 +318,14 @@ def add_fastmail(name, email):
     add_caldav(name, fastmail_home(email), email, what="Fastmail")
 
 
+def add_icloud(name, apple_id):
+    """iCloud: the calendar home is found by asking iCloud, once signed in."""
+    from .caldav import ICLOUD
+    if "@" not in apple_id:
+        die("that doesn't look like an Apple ID (an email address)")
+    add_caldav(name, ICLOUD, apple_id, what="iCloud")
+
+
 def add_caldav(name, url, user, what="the server"):
     """Any CalDAV server, signed in with a user name and an (app) password.
 
@@ -339,11 +347,15 @@ def add_caldav(name, url, user, what="the server"):
     if what == "Fastmail" and interactive:
         print("Make an app password for this at Fastmail: Settings > Privacy & Security >\n"
               "Manage app passwords > New app password, with access to Calendars (CalDAV).\n")
+    if what == "iCloud" and interactive:
+        print("iCloud takes an app-specific password, not your Apple ID password: make one at\n"
+              "appleid.apple.com > Sign-In and Security > App-Specific Passwords.\n")
     password = (getpass.getpass("App password for %s: " % user) if interactive
                 else sys.stdin.readline().rstrip("\r\n"))
     if not password:
         die("no password given; nothing saved")
     try:
+        url = caldav.home(caldav.Session(url, user, password))
         found = caldav.calendars(caldav.Session(url, user, password))
     except AuthError:
         die("%s refused that password. Check the user name (%s), and that the app\n"

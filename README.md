@@ -1,7 +1,7 @@
-# Datebook — Google Calendar, Microsoft 365 and Fastmail in Omarchy's clock
+# Datebook — Google Calendar, Microsoft 365, Fastmail and iCloud in Omarchy's clock
 
-Click the clock and your actual week is there: every Google, Microsoft 365
-and Fastmail calendar you have, in one place, with a Join button when a meeting's about to
+Click the clock and your actual week is there: every Google, Microsoft 365,
+Fastmail and iCloud calendar you have, in one place, with a Join button when a meeting's about to
 start.
 
 ![Datebook: your week, what's next, and a reminder you can join from](preview.png)
@@ -15,7 +15,7 @@ replaces the clock with a real calendar that knows about all of them.
 
 **Everything in one view.** Sign in to a Google account and as many Microsoft
 365 accounts as you have (work, a client's tenant, your own business), plus
-Fastmail or any other CalDAV server, and every calendar in them shows up
+Fastmail, iCloud or any other CalDAV server, and every calendar in them shows up
 together, each in its own colour. Tick the
 ones you care about and hide the rest.
 
@@ -53,15 +53,15 @@ brings the full calendar back.
 
 ![Compact: Omarchy's month, and today's appointments](screenshots/4-compact.png)
 
-**Private.** It talks straight to Google, Microsoft and Fastmail from your machine.
+**Private.** It talks straight to Google, Microsoft, Fastmail and iCloud from your machine.
 There's no server in the middle, your sign-ins live in the system keyring,
 and your events stay in your own cache. See [PRIVACY.md](PRIVACY.md).
 
 **Works with** Google Calendar (personal or Workspace), Microsoft 365 work
-or school accounts, Fastmail, and other CalDAV servers. Personal Outlook.com
+or school accounts, Fastmail, iCloud, and other CalDAV servers. Personal Outlook.com
 accounts aren't supported yet. You register your own (free) Google and
 Microsoft app to sign in with: it takes about ten minutes, once, and the
-steps are below. Fastmail needs only an app password.
+steps are below. Fastmail and iCloud need only an app password.
 
 ## Install
 
@@ -94,31 +94,38 @@ $C add-google Personal ~/Downloads/client_secret_*.json
 $C add-microsoft Work --tenant <tenant-id> --client-id <app-id>
 $C add-microsoft Client --tenant <tenant-id> --client-id <app-id>
 $C add-fastmail Home you@fastmail.com
+$C add-icloud Family you@icloud.com
 $C sync
 ```
 
 Google opens your browser to sign in. Microsoft shows a short code to enter
-at microsoft.com/devicelogin. Fastmail asks for an app password. The names
+at microsoft.com/devicelogin. Fastmail and iCloud ask for an app password. The names
 (`Personal`, `Work`, ...) are yours to choose; they're how accounts are
 labelled in the calendar. Refresh tokens and passwords go in the GNOME
 keyring (`secret-tool`), never on disk.
 
-### Fastmail and other CalDAV servers
+### Fastmail, iCloud and other CalDAV servers
 
 Fastmail signs in with an app password, not your real one: Fastmail
 Settings → Privacy & Security → Manage app passwords → New app password,
 with access to **Calendars (CalDAV)**. `add-fastmail` asks for it (it isn't
 echoed, and never goes on the command line), checks it, and saves it.
 
-Any other CalDAV server works the same way, given its calendar home:
+iCloud is the same with an app-specific password (your Apple ID password
+won't work): appleid.apple.com → Sign-In and Security → App-Specific
+Passwords. `add-icloud` takes your Apple ID and finds your calendars on
+whichever iCloud server holds them.
+
+Any other CalDAV server works the same way, given its address (the
+calendar home, or just the server: it's asked where your calendars are):
 
 ```bash
 $C add-caldav Nextcloud --url https://cloud.example.com/remote.php/dav/calendars/me/ --user me
 ```
 
 These accounts are two-way like the others, on any calendar the server
-lets you write to. The emails are the server's job: Fastmail (like most
-CalDAV servers) schedules on its side, so when you save an event with
+lets you write to. The emails are the server's job: Fastmail and iCloud
+(like most CalDAV servers) schedules on its side, so when you save an event with
 guests it sends them the invitation, update or cancellation, and when you
 answer an invitation it sends the organiser your reply. Datebook never
 sends mail itself. Deleting someone else's invitation only takes it off

@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Jon",
   "license": "MIT",
-  "description": "Your Google Calendar, Microsoft 365 and Fastmail events in Omarchy's clock, with reminders you can join from",
+  "description": "Your Google Calendar, Microsoft 365, Fastmail and iCloud events in Omarchy's clock, with reminders you can join from",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Datebook",
-    "description": "The clock, with Google Calendar, Microsoft 365 and Fastmail events on the month grid, a day agenda, and Join buttons for meetings.",
+    "description": "The clock, with Google Calendar, Microsoft 365, Fastmail and iCloud events on the month grid, a day agenda, and Join buttons for meetings.",
     "category": "Time",
     "allowMultiple": false
   }
