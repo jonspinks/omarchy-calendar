@@ -321,9 +321,10 @@ def add_fastmail(name, email):
 def add_caldav(name, url, user, what="the server"):
     """Any CalDAV server, signed in with a user name and an (app) password.
 
-    The password is asked for without echoing it, never taken from the
-    command line (where ps and the shell history would see it), and checked
-    against the server before anything is saved.
+    The password is asked for without echoing it, or read from stdin when
+    that isn't a terminal (so a password manager can pipe it in), never taken
+    from the command line (where ps and the shell history would see it), and
+    checked against the server before anything is saved.
     """
     import getpass
     from . import caldav
@@ -334,10 +335,12 @@ def add_caldav(name, url, user, what="the server"):
         caldav.check_url(url)
     except AuthError as e:
         die(str(e))
-    if what == "Fastmail":
+    interactive = sys.stdin.isatty()
+    if what == "Fastmail" and interactive:
         print("Make an app password for this at Fastmail: Settings > Privacy & Security >\n"
               "Manage app passwords > New app password, with access to Calendars (CalDAV).\n")
-    password = getpass.getpass("App password for %s: " % user)
+    password = (getpass.getpass("App password for %s: " % user) if interactive
+                else sys.stdin.readline().rstrip("\r\n"))
     if not password:
         die("no password given; nothing saved")
     try:
