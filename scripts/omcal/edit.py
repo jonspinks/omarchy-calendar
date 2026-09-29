@@ -9,6 +9,9 @@ brings back the provider's own version.
 Writes that replace a field wholesale carry the provider's version stamp
 (Google's etag as If-Match), so a change made elsewhere since the event was
 read is never overwritten: the write fails with Conflict instead.
+
+CalDAV accounts (Fastmail) go through davedit.py: the same checks here, then
+the event's resource is read, patched and written back with its ETag.
 """
 
 import os
@@ -46,14 +49,11 @@ def locate(uid):
     return a, path, st, e, uid[len(prefix):]
 
 
-def writable(a):
-    """Stop before anything is sent to an account this can't write to yet."""
-    if a["provider"] == "caldav":
-        raise EditError("changes are not supported for CalDAV accounts yet (%s is read-only here); "
-                        "make them in the provider's own app" % a["name"])
-
-
 def token(a):
+    """What each provider's calls sign in with: an access token, or a CalDAV Session."""
+    if a["provider"] == "caldav":
+        from . import caldav
+        return caldav.login(a)
     return auth.google_access(a) if a["provider"] == "google" else auth.ms_access(a)
 
 
@@ -66,13 +66,16 @@ def respond(uid, answer, series=False):
     if answer not in ANSWERS:
         raise EditError("the answer is accept, tentative or decline")
     a, path, st, e, eid = locate(uid)
-    writable(a)
     if e.get("organizer"):
         raise EditError("this is your own event: there is no invitation to answer")
     if series and not e.get("seriesId"):
         series = False
     target = e["seriesId"] if series else eid
     tok = token(a)
+    if a["provider"] == "caldav":
+        from . import davedit
+        _resource(a, e["calendar"], e.get("href"), davedit.respond(a, tok, e, answer, series))
+        return
     if a["provider"] == "google":
         _google_respond(tok, e["calendar"], target, ANSWERS[answer])
     else:
@@ -156,7 +159,6 @@ def calendar_of(ref):
     cal = (st.get("calendars") or {}).get(cid)
     if not a or not cal:
         raise EditError("no shown calendar %r (calendar-ctl calendars)" % ref)
-    writable(a)
     if not cal.get("editable"):
         raise EditError("%s is read-only" % (cal.get("name") or cid))
     return a, cal
@@ -185,6 +187,11 @@ def create(ref, title, start, end=None, all_day=False, location="", invite=(), b
         busy = not all_day
     invite = _addresses(invite)
     tok = token(a)
+    if a["provider"] == "caldav":
+        from . import davedit
+        href, ical_uid, text, etag = davedit.create(a, tok, cal, title, s, e, all_day, location, invite, busy)
+        _resource(a, cal["id"], href, (text, etag))
+        return "%s/%s/%s" % (a["name"], cal["id"], ical_uid)
     if a["provider"] == "google":
         body = {"summary": title, "location": location,
                 "transparency": "opaque" if busy else "transparent",
@@ -215,13 +222,16 @@ def delete(uid, series=False):
     calendar; decline it instead to tell the organiser.
     """
     a, path, st, e, eid = locate(uid)
-    writable(a)
     if not (st.get("calendars") or {}).get(e["calendar"], {}).get("editable"):
         raise EditError("this calendar is read-only")
     if series and not e.get("seriesId"):
         series = False
     target = e["seriesId"] if series else eid
     tok = token(a)
+    if a["provider"] == "caldav":
+        from . import davedit
+        _resource(a, e["calendar"], e.get("href"), davedit.delete(a, tok, e, series))
+        return
     # Only this copy's own etag guards it; a series master has its own, which
     # the local copy doesn't hold, so a series delete goes unguarded.
     guard = {} if series or not e.get("etag") else {"If-Match": e["etag"]}
@@ -235,6 +245,29 @@ def delete(uid, series=False):
         st = sync.read_json(path, {"events": {}})
         st["events"] = {u: x for u, x in st.get("events", {}).items()
                         if not (u == uid or series and x.get("seriesId") == e["seriesId"])}
+        sync.write_private(path, st)
+        sync.republish()
+
+
+def _resource(a, cid, href, stored):
+    """Put a CalDAV resource, as the server now holds it, into the local copy.
+
+    Every event that came from it is replaced by what it holds now (stored is
+    its (text, etag)), expanded here over the sync's window; None means it's
+    gone. The next sync reads the server's own expansion anyway.
+    """
+    from . import caldav
+    with sync.locked():
+        path = os.path.join(sync.CACHE, "state-%s.json" % a["name"])
+        st = sync.read_json(path, {"events": {}})
+        events = {u: x for u, x in st.get("events", {}).items()
+                  if not (x.get("calendar") == cid and x.get("href") == href)}
+        cal = (st.get("calendars") or {}).get(cid)
+        if stored and cal:
+            window = st.get("window") or sync.window_now()[1]
+            for x in caldav.resource_events(a["name"], cal, stored[0], stored[1], window, a.get("email", ""), href):
+                events[x["uid"]] = x
+        st["events"] = events
         sync.write_private(path, st)
         sync.republish()
 
@@ -267,7 +300,6 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
     """
     from datetime import timedelta
     a, path, st, e, eid = locate(uid)
-    writable(a)
     if not e.get("editable"):
         raise EditError("you can't change this event: it isn't yours, or the calendar is read-only")
     series = bool(series and e.get("seriesId"))
@@ -292,14 +324,19 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
             en = s + (when(e["end"], ad) - when(e["start"], ad))
         if en <= s:
             raise EditError("the end has to be after the start")
+    invite, uninvite = _addresses(invite), _addresses(uninvite)
+    title = None if title is None else title.strip() or "(no title)"
+    tok = token(a)
+    if a["provider"] == "caldav":
+        from . import davedit
+        _resource(a, e["calendar"], e.get("href"), davedit.update(
+            a, tok, e, title, location, busy, (s, en, ad) if timing else None, invite, uninvite, series))
+        return
     target = e["seriesId"] if series else eid
     guard = {} if series else {"If-Match": e["etag"]} if e.get("etag") else {}
-    invite, uninvite = _addresses(invite), _addresses(uninvite)
     body = _fields_body(a, title, location, busy, (s, en, ad) if timing else None)
     # What a series' occurrences take at once; the rest comes back with the sync.
-    local = {k: v for k, v in (("title", None if title is None else title.strip() or "(no title)"),
-                               ("location", location), ("busy", busy)) if v is not None}
-    tok = token(a)
+    local = {k: v for k, v in (("title", title), ("location", location), ("busy", busy)) if v is not None}
     if invite or uninvite:
         ev, body = _write_guests(a, e, target, tok, invite, uninvite, body, guard)
     elif a["provider"] == "google":
@@ -384,13 +421,16 @@ def _version(etag):
 def merge_guests(provider, attendees, invite, uninvite, me="", organizer=""):
     """The provider's attendee list with these addresses added and removed.
 
-    attendees is the list exactly as the provider sent it; the entries kept
-    are passed back as they came, answers included. Raises EditError for a
+    attendees is the list exactly as the provider sent it (for CalDAV,
+    {"email"} per ATTENDEE); the entries kept are passed back as they came,
+    answers included. Raises EditError for a
     change that can't be made: adding someone already invited, removing
     someone who isn't, or removing the organiser or yourself.
     """
+    graph = provider == "microsoft"
+
     def addr(x):
-        return ((x.get("email") if provider == "google" else (x.get("emailAddress") or {}).get("address")) or "").lower()
+        return ((x.get("email") if not graph else (x.get("emailAddress") or {}).get("address")) or "").lower()
 
     have = {addr(x): x for x in attendees}
     for m in uninvite:
@@ -405,8 +445,8 @@ def merge_guests(provider, attendees, invite, uninvite, me="", organizer=""):
             raise EditError("%s is already invited" % m)
     out = [x for x in attendees if addr(x) not in uninvite]
     for m in invite:
-        out.append({"email": m} if provider == "google" else {"emailAddress": {"address": m}, "type": "required"})
-    if provider != "google":
+        out.append({"email": m} if not graph else {"emailAddress": {"address": m}, "type": "required"})
+    if graph:
         # Graph replaces the list wholesale and keeps each kept guest's answer
         # by address; the answers themselves are read-only.
         out = [{"emailAddress": x["emailAddress"], "type": x.get("type", "required")} for x in out]
