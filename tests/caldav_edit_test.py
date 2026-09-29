@@ -207,7 +207,7 @@ class Case(unittest.TestCase):
         for href, (text, etag) in self.server.files.items():
             for e in caldav.resource_events("F", CAL, text, etag, WINDOW, ME, href):
                 events[e["uid"]] = e
-        sync.write_private(self.state_path(), {"calendars": {"work": dict(CAL, cursor="2:c1")}, "known": [CAL],
+        sync.write_private(self.state_path(), {"calendars": {"work": dict(CAL, cursor="3:c1")}, "known": [CAL],
                                                "events": events, "window": list(WINDOW)})
 
     def tearDown(self):

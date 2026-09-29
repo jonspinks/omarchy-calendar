@@ -119,7 +119,7 @@ class Listing(unittest.TestCase):
         self.assertEqual([c["editable"] for c in cals], [True, False])
         # The default calendar, named on the Inbox, is the primary one.
         self.assertEqual([c["primary"] for c in cals], [False, True])
-        self.assertEqual(caldav.cursor(work), "2:https://example.com/sync/7")
+        self.assertEqual(caldav.cursor(work), "3:https://example.com/sync/7")
 
     def test_401_is_a_sign_in_problem(self):
         import io
@@ -347,14 +347,14 @@ class Syncing(unittest.TestCase):
         st = self.run_sync("c1", one)
         self.assertEqual((st["status"], self.reports), ("ok", 1))
         self.assertEqual(list(st["events"]), ["F/work/u1"])
-        self.assertEqual(st["calendars"]["work"]["cursor"], "2:c1")
+        self.assertEqual(st["calendars"]["work"]["cursor"], "3:c1")
         st = self.run_sync("c1", [])   # the server would say nothing is there: never asked
         self.assertEqual((self.reports, list(st["events"])), (1, ["F/work/u1"]))
         # A moved ctag refetches the calendar whole: what's gone is gone.
         two = ["BEGIN:VEVENT\nUID:u2\nDTSTART:20261004T120000Z\nSUMMARY:Two\nEND:VEVENT"]
         st = self.run_sync("c2", two)
         self.assertEqual((self.reports, list(st["events"])), (2, ["F/work/u2"]))
-        self.assertEqual(st["calendars"]["work"]["cursor"], "2:c2")
+        self.assertEqual(st["calendars"]["work"]["cursor"], "3:c2")
         st = self.run_sync("c2", two, full=True)   # --full always fetches
         self.assertEqual(self.reports, 3)
 
