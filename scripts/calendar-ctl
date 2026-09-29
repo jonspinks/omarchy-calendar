@@ -3,7 +3,7 @@
 
     calendar-ctl add-google <name> <client_secret.json>
     calendar-ctl add-microsoft <name> --tenant <tenant-id> --client-id <app-id>
-    calendar-ctl add-fastmail <name> <email>
+    calendar-ctl add-fastmail <name> <email>          # password prompted, or piped on stdin
     calendar-ctl add-caldav <name> --url <calendar-home-url> --user <username>
     calendar-ctl list
     calendar-ctl test <name>          # the next five events, to prove access
