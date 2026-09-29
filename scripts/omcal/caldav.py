@@ -203,9 +203,10 @@ def colour(text):
 
 
 # The shape of the events a cursor was fetched with. Bumped when they gain a
-# field (2: href and recurrenceId, for writing back), so every calendar is
-# fetched again once, not left without it until something in it changes.
-SHAPE = 2
+# field (2: href and recurrenceId, for writing back) or read one differently
+# (3: a series' bare first occurrence), so every calendar is fetched again
+# once, not left as it was until something in it changes.
+SHAPE = 3
 
 
 def cursor(cal):
