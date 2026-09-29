@@ -250,6 +250,17 @@ class Series(unittest.TestCase):
         self.assertTrue(all(e["recurring"] and e["seriesId"] == "standup" for e in first))
         self.assertEqual([e["uid"] for e in events(data)], [e["uid"] for e in first])   # stable
 
+    def test_expanded_first_occurrence_without_its_recurrence_id(self):
+        # Fastmail sends a series' first occurrence bare: no RECURRENCE-ID and
+        # no RRULE. Its siblings' UID is what marks it as part of the series.
+        bare = "BEGIN:VEVENT\nUID:s\nDTSTART:20261005T140000Z\nDTEND:20261005T143000Z\nSUMMARY:S\nEND:VEVENT"
+        occ = ("BEGIN:VEVENT\nUID:s\nRECURRENCE-ID:20261012T140000Z\nDTSTART:20261012T140000Z\n"
+               "DTEND:20261012T143000Z\nSUMMARY:S\nEND:VEVENT")
+        got = sorted(events([bare, occ]), key=lambda e: e["start"])
+        self.assertEqual([e["uid"] for e in got], ["F/work/s@20261005T140000Z", "F/work/s@20261012T140000Z"])
+        self.assertTrue(all(e["recurring"] and e["seriesId"] == "s" for e in got))
+        self.assertEqual(got[0]["recurrenceId"], "20261005T140000Z")
+
     def test_weekly_byday_count_with_exdate_and_an_override(self):
         master = ("BEGIN:VEVENT\nUID:w\nDTSTART;TZID=America/Chicago:20260928T090000\n"
                   "DTEND;TZID=America/Chicago:20260928T093000\nSUMMARY:Sync\n"

@@ -160,6 +160,27 @@ def _only(doc):
     return _master(doc) or events[0]
 
 
+def _start_key(e):
+    """The event's start as a RECURRENCE-ID key (what ical.instant_key gives)."""
+    return e["start"].replace("-", "").replace(":", "")
+
+
+def _as_occurrence(doc, e):
+    """e itself, or e as one occurrence when the server's copy is a series.
+
+    The local copy can call an occurrence a one-off (a series with only one
+    occurrence in the window, or a first occurrence a server sent without its
+    RECURRENCE-ID). Acting on it as a one-off would change or delete the
+    whole series, so the server's copy decides.
+    """
+    if e.get("recurrenceId"):
+        return e
+    master = _master(doc)
+    if master is not None and (master.get("RRULE") or master.get("RDATE")):
+        return dict(e, recurrenceId=_start_key(e))
+    return e
+
+
 def _targets(doc, e, series):
     """The VEVENTs a change goes to: the series and its overrides, one
     occurrence's override, or the single event."""
@@ -169,6 +190,7 @@ def _targets(doc, e, series):
             raise EditError("only some occurrences of this series are on your calendar; "
                             "change them one at a time")
         return [master] + [b for b in doc.events() if b is not master]
+    e = _as_occurrence(doc, e)
     if e.get("recurrenceId"):
         return [_occurrence(doc, e["recurrenceId"])]
     return [_only(doc)]
@@ -358,11 +380,15 @@ def delete(a, session, e, series):
     """
     _check(e)
     mine = bool(e.get("organizer"))
-    if series or not e.get("recurrenceId"):
+    if series:
         _delete(session, e["href"], e.get("etag", ""), mine)
         return None
     doc, etag = _read(session, e["href"])
     _unchanged(etag, e)
+    e = _as_occurrence(doc, e)
+    if not e.get("recurrenceId"):
+        _delete(session, e["href"], etag, mine)
+        return None
     rid = e["recurrenceId"]
     master = _master(doc)
     override = _override(doc, rid)
