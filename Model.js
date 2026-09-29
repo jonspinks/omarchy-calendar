@@ -329,8 +329,10 @@ function indexEvents(data, use24h) {
   var calendars = {}, accounts = []
   var accountIndex = {}
   var list = (data && data.accounts) || []
+  var providerOf = {}
   for (var i = 0; i < list.length; i++) {
     accountIndex[list[i].name] = i
+    providerOf[list[i].name] = list[i].provider
     accounts.push(list[i])
   }
   var cals = (data && data.calendars) || []
@@ -370,6 +372,8 @@ function indexEvents(data, use24h) {
         allDay: e.allDay || day.label === "All day", start: e.start, end: e.end,
         organizer: !!e.organizer, recurring: !!e.recurring,
         calendar: e.calendar, editable: !!e.editable && !!cinfo.editable,
+        // CalDAV accounts are read-only for now: no Accept/Maybe/Decline either.
+        answerable: providerOf[e.account] !== "caldav",
         busy: e.busy !== false,
         guests: e.guests || [], guestTotal: e.guestTotal || 0, guestsHidden: !!e.guestsHidden
       })

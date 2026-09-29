@@ -34,6 +34,8 @@ Item {
   readonly property bool creating: !!draft && draft.mode === "create"
   readonly property bool editable: creating || (!!event && event.editable)
   readonly property bool invitation: !!event && !event.organizer
+  // An invitation this account can answer from here (not a CalDAV one, yet).
+  readonly property bool answerable: invitation && event.answerable !== false
   readonly property bool recurring: !!event && event.recurring
 
   property bool allDay: false
@@ -156,6 +158,7 @@ Item {
 
   function providerName() {
     var link = editor.event ? String(editor.event.webLink || "") : ""
+    if (link === "") return "your calendar's own app"   // CalDAV events have no web link
     return link.indexOf("google.com") >= 0 ? "Google Calendar" : "Outlook"
   }
 
@@ -459,7 +462,7 @@ Item {
     }
 
     Toggle {
-      visible: editor.recurring && (editor.editable || editor.invitation)
+      visible: editor.recurring && (editor.editable || editor.answerable)
       width: parent.width
       label: "Every occurrence"
       description: editor.editable ? "Title, place, guests and delete apply to the whole series; times move one at a time"
@@ -473,7 +476,7 @@ Item {
 
     // Someone else's event: answer it.
     Row {
-      visible: editor.invitation && !!editor.event
+      visible: editor.answerable
       spacing: Style.space(6)
 
       Repeater {

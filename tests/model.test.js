@@ -5,7 +5,7 @@ const path = require("path")
 const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders," +
-  " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary }")()
+  " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -112,6 +112,18 @@ e.guestText = "oops"
 eq(M.draftArgs(e).error, "oops isn't an email address.", "guests: typed nonsense stops the save")
 e.guestText = ""; e.title = "New"; e.invited = ["new@x.co"]; e.series = true
 eq(M.draftArgs(e).args, ["update", "P/c/1", "--title", "New", "--invite", "new@x.co", "--series"], "guests: with a title, for the series")
+
+// CalDAV accounts are read-only for now: their invitations can't be answered from here.
+const idx = M.indexEvents({
+  accounts: [{ name: "G", provider: "google" }, { name: "F", provider: "caldav" }],
+  calendars: [{ account: "G", id: "c", name: "C" }, { account: "F", id: "w", name: "W" }],
+  events: ["G/c", "F/w"].map(function(ref) {
+    return { uid: ref + "/1", account: ref[0], calendar: ref.slice(2), title: "Invite", allDay: true,
+             start: "2026-10-02", end: "2026-10-03", status: "confirmed", response: "needsAction" }
+  })
+}, true)
+eq(idx.byDay["2026-10-02"].map(function(r) { return [r.account, r.answerable] }).sort(),
+   [["F", false], ["G", true]], "indexEvents: caldav invitations aren't answerable")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

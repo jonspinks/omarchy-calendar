@@ -1392,7 +1392,7 @@ Panel {
                     // An invitation not yet answered for sure: answer it here.
                     // A recurring one is answered for the whole series.
                     Row {
-                      visible: !eventRow.modelData.organizer
+                      visible: !eventRow.modelData.organizer && eventRow.modelData.answerable !== false
                                && (eventRow.modelData.response === "needsAction" || eventRow.modelData.response === "tentative")
                       topPadding: Style.space(3)
                       bottomPadding: Style.space(2)
@@ -1470,7 +1470,7 @@ Panel {
                   wrapMode: Text.WordWrap
                   textFormat: Text.PlainText
                   text: modelData.name + ": " + (modelData.status === "signin"
-                    ? "sign-in needed (calendar-ctl add-" + (modelData.provider === "google" ? "google" : "microsoft") + " " + modelData.name + " …)"
+                    ? "sign-in needed (calendar-ctl add-" + ({google: "google", caldav: "fastmail|add-caldav"}[modelData.provider] || "microsoft") + " " + modelData.name + " …)"
                     : modelData.status === "offline" ? "offline, showing the last copy" : "couldn't sync")
                   color: Color.urgent
                   font.family: root.contentFontFamily
