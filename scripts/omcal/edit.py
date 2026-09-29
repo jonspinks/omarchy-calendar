@@ -46,6 +46,13 @@ def locate(uid):
     return a, path, st, e, uid[len(prefix):]
 
 
+def writable(a):
+    """Stop before anything is sent to an account this can't write to yet."""
+    if a["provider"] == "caldav":
+        raise EditError("changes are not supported for CalDAV accounts yet (%s is read-only here); "
+                        "make them in the provider's own app" % a["name"])
+
+
 def token(a):
     return auth.google_access(a) if a["provider"] == "google" else auth.ms_access(a)
 
@@ -59,6 +66,7 @@ def respond(uid, answer, series=False):
     if answer not in ANSWERS:
         raise EditError("the answer is accept, tentative or decline")
     a, path, st, e, eid = locate(uid)
+    writable(a)
     if e.get("organizer"):
         raise EditError("this is your own event: there is no invitation to answer")
     if series and not e.get("seriesId"):
@@ -148,6 +156,7 @@ def calendar_of(ref):
     cal = (st.get("calendars") or {}).get(cid)
     if not a or not cal:
         raise EditError("no shown calendar %r (calendar-ctl calendars)" % ref)
+    writable(a)
     if not cal.get("editable"):
         raise EditError("%s is read-only" % (cal.get("name") or cid))
     return a, cal
@@ -206,6 +215,7 @@ def delete(uid, series=False):
     calendar; decline it instead to tell the organiser.
     """
     a, path, st, e, eid = locate(uid)
+    writable(a)
     if not (st.get("calendars") or {}).get(e["calendar"], {}).get("editable"):
         raise EditError("this calendar is read-only")
     if series and not e.get("seriesId"):
@@ -257,6 +267,7 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
     """
     from datetime import timedelta
     a, path, st, e, eid = locate(uid)
+    writable(a)
     if not e.get("editable"):
         raise EditError("you can't change this event: it isn't yours, or the calendar is read-only")
     series = bool(series and e.get("seriesId"))
