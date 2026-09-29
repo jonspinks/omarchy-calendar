@@ -3,7 +3,7 @@
 *Last updated: 28 September 2026*
 
 Datebook (Omarchy Calendar) is a desktop calendar for the Omarchy Linux desktop. It shows
-your Google Calendar, Microsoft 365 and Fastmail (or other CalDAV) events in the desktop's calendar, sends
+your Google Calendar, Microsoft 365, Fastmail and iCloud (or other CalDAV) events in the desktop's calendar, sends
 meeting reminders, and lets you create, edit, delete and respond to events, and see and change who
 is invited.
 It is open source: everything it does is in this repository.
@@ -17,7 +17,7 @@ Microsoft's own sign-in page:
   plus your email address, to show which account is signed in.
 - **Microsoft 365:** `Calendars.ReadWrite` and `User.Read`, plus
   `offline_access`, so it can stay signed in.
-- **Fastmail and other CalDAV servers:** an app password you create for it,
+- **Fastmail, iCloud and other CalDAV servers:** an app password you create for it,
   with calendar (CalDAV) access only. Changes you make are written back to
   your calendars there; the server itself (Fastmail's, or yours) sends any
   invitations, updates, cancellations or replies those changes call for, to
@@ -31,8 +31,9 @@ anything else.
 
 Nowhere but your own computer. Datebook has no server, and no one
 operates a service behind it: it runs entirely on your machine and talks
-directly to Google's and Microsoft's calendar APIs, and for Fastmail to
-`caldav.fastmail.com` only (or to the CalDAV address you give it).
+directly to Google's and Microsoft's calendar APIs, and for Fastmail and iCloud to
+`caldav.fastmail.com` or `caldav.icloud.com` (and the iCloud server it
+points to) only, or to the CalDAV address you give it.
 
 - **Sign-in tokens**, and a CalDAV account's app password, are stored in your
   system keyring (the GNOME keyring, through `secret-tool`), never in a plain
@@ -60,8 +61,9 @@ to anyone, and never used for advertising, analytics or training.
   are safe to delete.
 - You can revoke its access at any time: for Google at
   <https://myaccount.google.com/permissions>, and for Microsoft at
-  <https://myaccount.microsoft.com> under *App permissions*, and for Fastmail
-  by revoking the app password under Settings → Privacy & Security.
+  <https://myaccount.microsoft.com> under *App permissions*, for Fastmail
+  by revoking the app password under Settings → Privacy & Security, and for
+  iCloud under App-Specific Passwords at <https://appleid.apple.com>.
 
 ## Use of Google user data
 
