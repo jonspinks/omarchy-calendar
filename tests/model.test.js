@@ -113,17 +113,19 @@ eq(M.draftArgs(e).error, "oops isn't an email address.", "guests: typed nonsense
 e.guestText = ""; e.title = "New"; e.invited = ["new@x.co"]; e.series = true
 eq(M.draftArgs(e).args, ["update", "P/c/1", "--title", "New", "--invite", "new@x.co", "--series"], "guests: with a title, for the series")
 
-// CalDAV accounts are read-only for now: their invitations can't be answered from here.
+// CalDAV is two-way: its events are editable where the event and calendar
+// both say so, and its invitations are answered like any other.
 const idx = M.indexEvents({
   accounts: [{ name: "G", provider: "google" }, { name: "F", provider: "caldav" }],
-  calendars: [{ account: "G", id: "c", name: "C" }, { account: "F", id: "w", name: "W" }],
+  calendars: [{ account: "G", id: "c", name: "C", editable: true }, { account: "F", id: "w", name: "W", editable: true }],
   events: ["G/c", "F/w"].map(function(ref) {
-    return { uid: ref + "/1", account: ref[0], calendar: ref.slice(2), title: "Invite", allDay: true,
-             start: "2026-10-02", end: "2026-10-03", status: "confirmed", response: "needsAction" }
+    return { uid: ref + "/1", account: ref[0], calendar: ref.slice(2), title: "Mine", allDay: true,
+             start: "2026-10-02", end: "2026-10-03", status: "confirmed", response: "organizer",
+             organizer: true, editable: true }
   })
 }, true)
-eq(idx.byDay["2026-10-02"].map(function(r) { return [r.account, r.answerable] }).sort(),
-   [["F", false], ["G", true]], "indexEvents: caldav invitations aren't answerable")
+eq(idx.byDay["2026-10-02"].map(function(r) { return [r.account, r.editable, "answerable" in r] }).sort(),
+   [["F", true, false], ["G", true, false]], "indexEvents: caldav events edit like the others")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

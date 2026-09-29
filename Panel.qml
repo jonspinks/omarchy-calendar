@@ -1392,7 +1392,7 @@ Panel {
                     // An invitation not yet answered for sure: answer it here.
                     // A recurring one is answered for the whole series.
                     Row {
-                      visible: !eventRow.modelData.organizer && eventRow.modelData.answerable !== false
+                      visible: !eventRow.modelData.organizer
                                && (eventRow.modelData.response === "needsAction" || eventRow.modelData.response === "tentative")
                       topPadding: Style.space(3)
                       bottomPadding: Style.space(2)
