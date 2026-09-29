@@ -3,6 +3,8 @@
 
     calendar-ctl add-google <name> <client_secret.json>
     calendar-ctl add-microsoft <name> --tenant <tenant-id> --client-id <app-id>
+    calendar-ctl add-fastmail <name> <email>
+    calendar-ctl add-caldav <name> --url <calendar-home-url> --user <username>
     calendar-ctl list
     calendar-ctl test <name>          # the next five events, to prove access
     calendar-ctl sync [--full]        # bring the local copy up to date
@@ -27,13 +29,17 @@ the last (it defaults to one day, or one hour for a timed event).
 provider sends them the invitation or the cancellation.
 
 Secrets never touch disk here. Each account's refresh token (and, for Google,
-the OAuth client secret) is stored in the GNOME keyring through secret-tool,
-under service=blacksheep.calendar account=<name>. The config file holds only
-what is not secret: names, providers, tenant and client IDs.
+the OAuth client secret; for CalDAV, the app password) is stored in the GNOME
+keyring through secret-tool, under service=blacksheep.calendar account=<name>.
+The config file holds only what is not secret: names, providers, tenant and
+client IDs, CalDAV addresses.
 
 Google signs in through the browser (installed-app flow with PKCE, redirected
 to a one-shot listener on 127.0.0.1). Microsoft uses the device-code flow: no
 listener, no browser redirect, and nothing to paste but a short code.
+Fastmail and other CalDAV servers take an app password, asked for at the
+prompt (never on the command line). CalDAV accounts are read-only for now:
+respond, create, update and delete are for Google and Microsoft.
 """
 
 import os
@@ -51,7 +57,11 @@ def cmd_test(name):
     a = account(name)
     now = datetime.now(timezone.utc)
     rows = []
-    if a["provider"] == "google":
+    if a["provider"] == "caldav":
+        from omcal import caldav
+        for e in caldav.upcoming(caldav.login(a), a.get("email", "")):
+            rows.append((e["start"], e["title"], (e["join"] or {}).get("kind", "").capitalize()))
+    elif a["provider"] == "google":
         tok = google_access(a)
         q = urllib.parse.urlencode({"timeMin": now.isoformat(), "singleEvents": "true",
                                     "orderBy": "startTime", "maxResults": 5})
@@ -214,6 +224,10 @@ def main(argv):
         add_google(*args)
     elif cmd == "add-microsoft" and len(args) == 5 and args[1] == "--tenant" and args[3] == "--client-id":
         add_microsoft(args[0], args[2], args[4])
+    elif cmd == "add-fastmail" and len(args) == 2:
+        add_fastmail(*args)
+    elif cmd == "add-caldav" and len(args) == 5 and args[1] == "--url" and args[3] == "--user":
+        add_caldav(args[0], args[2], args[4])
     elif cmd == "list" and not args:
         for a in load_accounts():
             print("%-16s %-10s %s" % (a["name"], a["provider"], a.get("email", "")))
