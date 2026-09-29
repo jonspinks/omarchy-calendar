@@ -279,6 +279,10 @@ def resource_events(account, cal, data, etag, window, me="", href=""):
     vevents = ical.parse(data).find("VEVENT")
     overridden = {ical.instant_key(ical.value_time(v.get("RECURRENCE-ID")))
                   for v in vevents if v.get("RECURRENCE-ID")}
+    # Fastmail's expand leaves the RECURRENCE-ID off a series' first
+    # occurrence (and its RRULE with it), so on its own it looks like a
+    # one-off. Its siblings give it away: they share its UID.
+    in_series = {v.value("UID") for v in vevents if v.get("RECURRENCE-ID")}
     out = []
     for v in vevents:
         start = ical.value_time(v.get("DTSTART"))
@@ -291,6 +295,8 @@ def resource_events(account, cal, data, etag, window, me="", href=""):
             starts = [t for t in ical.occurrences(start, rrule, hi, v.value("UID"))
                       if ical.instant_key(t) not in skip]
             series = True
+        elif not v.get("RECURRENCE-ID") and v.value("UID") in in_series:
+            starts, series = [start], True
         else:
             starts, series = [start], False
         for s in starts:

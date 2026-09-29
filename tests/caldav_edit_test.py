@@ -483,6 +483,31 @@ class Delete(Case):
         left = sorted(e["start"][:10] for e in self.state().values() if e.get("seriesId") == "standup@example.com")
         self.assertEqual(left, ["2026-10-05", "2026-10-12", "2026-10-26", "2026-11-02", "2026-11-09"])
 
+    def bare_occurrence(self):
+        """The 19th as a server might send a first occurrence: looking like a
+        one-off, with no recurrenceId, though its resource is a series."""
+        st = self.state(whole=True)
+        e = dict(st["events"].pop("F/work/standup@example.com@20261019T140000Z"),
+                 uid="F/work/standup@example.com", recurrenceId=None, recurring=False, seriesId=None)
+        st["events"][e["uid"]] = e
+        sync.write_private(self.state_path(), st)
+        return e["uid"]
+
+    def test_a_series_occurrence_that_looks_like_a_one_off(self):
+        # Deleting the resource here would take the whole series with it.
+        edit.delete(self.bare_occurrence())
+        writes = self.server.writes()
+        self.assertEqual([w[0] for w in writes], ["PUT"])
+        master = self.vevents("series.ics")[0]
+        self.assertEqual(master.get("EXDATE"), ("20261019T090000", {"TZID": "America/Chicago"}))
+
+    def test_renaming_it_changes_only_that_occurrence(self):
+        edit.update(self.bare_occurrence(), title="Just this one")
+        blocks = self.vevents("series.ics")
+        self.assertEqual(blocks[0].value("SUMMARY"), "Standup")
+        self.assertIn(("Just this one", "20261019T090000"),
+                      [(b.value("SUMMARY"), b.value("RECURRENCE-ID")) for b in blocks[1:]])
+
     def test_an_occurrence_that_had_been_moved(self):
         edit.delete("F/work/standup@example.com@20261012T140000Z")
         [master] = self.vevents("series.ics")
