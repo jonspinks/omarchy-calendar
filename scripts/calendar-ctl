@@ -4,7 +4,8 @@
     calendar-ctl add-google <name> <client_secret.json>
     calendar-ctl add-microsoft <name> --tenant <tenant-id> --client-id <app-id>
     calendar-ctl add-fastmail <name> <email>          # password prompted, or piped on stdin
-    calendar-ctl add-caldav <name> --url <calendar-home-url> --user <username>
+    calendar-ctl add-icloud <name> <apple-id>         # an app-specific password, prompted or piped
+    calendar-ctl add-caldav <name> --url <server-or-calendar-home> --user <username>
     calendar-ctl list
     calendar-ctl test <name>          # the next five events, to prove access
     calendar-ctl sync [--full]        # bring the local copy up to date
@@ -226,6 +227,8 @@ def main(argv):
         add_microsoft(args[0], args[2], args[4])
     elif cmd == "add-fastmail" and len(args) == 2:
         add_fastmail(*args)
+    elif cmd == "add-icloud" and len(args) == 2:
+        add_icloud(*args)
     elif cmd == "add-caldav" and len(args) == 5 and args[1] == "--url" and args[3] == "--user":
         add_caldav(args[0], args[2], args[4])
     elif cmd == "list" and not args:
