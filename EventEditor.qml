@@ -157,6 +157,7 @@ Item {
 
   function providerName() {
     var link = editor.event ? String(editor.event.webLink || "") : ""
+    if (link === "") return "your calendar's own app"   // CalDAV events have no web link
     return link.indexOf("google.com") >= 0 ? "Google Calendar" : "Outlook"
   }
 

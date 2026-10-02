@@ -1470,7 +1470,7 @@ Panel {
                   wrapMode: Text.WordWrap
                   textFormat: Text.PlainText
                   text: modelData.name + ": " + (modelData.status === "signin"
-                    ? "sign-in needed (calendar-ctl add-" + (modelData.provider === "google" ? "google" : "microsoft") + " " + modelData.name + " …)"
+                    ? "sign-in needed (calendar-ctl add-" + ({google: "google", caldav: "fastmail|add-caldav"}[modelData.provider] || "microsoft") + " " + modelData.name + " …)"
                     : modelData.status === "offline" ? "offline, showing the last copy" : "couldn't sync")
                   color: Color.urgent
                   font.family: root.contentFontFamily

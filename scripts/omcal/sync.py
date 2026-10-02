@@ -3,9 +3,11 @@
     python3 -m omcal.sync [--full] [--quiet]
 
 Each account keeps its own state file, and each calendar in it its own cursor:
-a Graph deltaLink, or the time of the last Google fetch. A pass fetches only
-what changed, and a full refresh runs when the window moves on to a new day,
-when a cursor has expired, or every six hours for Google. An account that
+a Graph deltaLink, the time of the last Google fetch, or a CalDAV calendar's
+ctag. A pass fetches only what changed, and a full refresh runs when the
+window moves on to a new day, when a cursor has expired, or every six hours
+for Google. CalDAV has no delta: a calendar whose ctag has moved is simply
+fetched whole, and one whose ctag hasn't isn't fetched at all. An account that
 fails (signed out, keyring locked, offline) keeps its last good events and
 reports why, and never stops the other accounts syncing.
 
@@ -23,7 +25,7 @@ import time
 import urllib.error
 from datetime import datetime, timedelta, timezone
 
-from . import auth, files, google, graph
+from . import auth, caldav, files, google, graph
 from .model import sort_key
 
 APP = "blacksheep.calendar"
@@ -56,6 +58,8 @@ def sync_account(a, full, log):
     try:
         if a["provider"] == "google":
             tok, prov = auth.google_access(a), google
+        elif a["provider"] == "caldav":
+            tok, prov = caldav.login(a), caldav
         else:
             tok, prov = auth.ms_access(a), graph
         # Hidden calendars are not fetched at all; their cached events go too,
@@ -73,6 +77,10 @@ def sync_account(a, full, log):
         for cal in cals:
             prev = st["calendars"].get(cal["id"], {})
             cursor = prev.get("cursor")
+            if prov is caldav and cursor != caldav.cursor(cal):
+                # The calendar changed since it was fetched: a moved ctag is as
+                # good as no cursor, and the whole calendar is read again.
+                cursor = None
             stale = a["provider"] == "google" and now - prev.get("fullAt", 0) > GOOGLE_FULL_EVERY
             whole = full or moved or not cursor or stale
             try:
@@ -109,6 +117,8 @@ def _fetch(a, prov, tok, cal, window, cursor):
     if prov is google:
         events, removed, at = google.fetch(a["name"], tok, cal, window, cursor)
         return events, removed, google.since(at)
+    if prov is caldav:
+        return caldav.fetch(a["name"], tok, cal, window, cursor, a.get("email", ""))
     return graph.fetch(a["name"], tok, cal, window, cursor, a.get("email", ""))
 
 
