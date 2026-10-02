@@ -31,9 +31,8 @@ class DeltaExpired(Exception):
     """Graph no longer honours this deltaLink (HTTP 410): start a new delta."""
 
 
-def _get(url, tok):
-    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok,
-                                               "Prefer": "odata.maxpagesize=100"})
+def _get(url, tok, prefer="odata.maxpagesize=100"):
+    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok, "Prefer": prefer})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return files.reply_json(r)
@@ -122,6 +121,29 @@ def normalise(account, cal, e, me=""):
     }
 
 
+# A delta can report a changed event with only the fields that changed (seen
+# after a guest was added to one occurrence of a series: its later occurrences
+# came back without subject or isOrganizer). Normalised as they stand, those
+# read as untitled events someone else organised, which hides Edit and Delete.
+# An untitled event still carries "subject": "", so a missing key means a
+# partial item, not an empty title.
+IDENTITY_FIELDS = ("subject", "isOrganizer")
+
+
+def partial(e):
+    return any(k not in e for k in IDENTITY_FIELDS)
+
+
+def full_event(tok, event_id):
+    """The whole event, in UTC like the delta, or None if it can't be read."""
+    from .auth import HttpError
+    try:
+        return _get(API + "/me/events/" + urllib.parse.quote(event_id, safe=""), tok,
+                    prefer='outlook.timezone="UTC"')
+    except (HttpError, DeltaExpired, OSError):
+        return None
+
+
 def fetch(account, tok, cal, window, delta_link=None, me=""):
     """Returns (events, removed_ids, next_delta_link).
 
@@ -142,6 +164,10 @@ def fetch(account, tok, cal, window, delta_link=None, me=""):
             if "@removed" in e or e.get("isCancelled"):
                 removed.append(uid)
             elif "start" in e:
+                if partial(e):
+                    e = full_event(tok, e["id"])
+                    if not e:
+                        continue   # keep the copy we have rather than a half-empty one
                 events.append(normalise(account, cal, e, me))
         if r.get("@odata.nextLink"):
             url = r["@odata.nextLink"]
