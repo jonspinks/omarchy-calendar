@@ -34,6 +34,7 @@ Item {
   readonly property bool creating: !!draft && draft.mode === "create"
   readonly property bool editable: creating || (!!event && event.editable)
   readonly property bool invitation: !!event && !event.organizer
+  readonly property bool removable: !!event && (event.editable || event.calendarEditable)
   readonly property bool recurring: !!event && event.recurring
 
   property bool allDay: false
@@ -520,7 +521,7 @@ Item {
         spacing: Style.space(6)
 
         Button {
-          visible: !editor.creating && editor.editable
+          visible: !editor.creating && editor.removable
           enabled: !editor.saving
           bordered: editor.confirmingDelete
           iconText: "󰆴"

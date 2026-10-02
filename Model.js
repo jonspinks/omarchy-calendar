@@ -370,6 +370,9 @@ function indexEvents(data, use24h) {
         allDay: e.allDay || day.label === "All day", start: e.start, end: e.end,
         organizer: !!e.organizer, recurring: !!e.recurring,
         calendar: e.calendar, editable: !!e.editable && !!cinfo.editable,
+        // Taking an event off a calendar needs only the calendar to be
+        // writable, not the event to be yours (an invitation can go too).
+        calendarEditable: !!cinfo.editable,
         busy: e.busy !== false,
         guests: e.guests || [], guestTotal: e.guestTotal || 0, guestsHidden: !!e.guestsHidden
       })
