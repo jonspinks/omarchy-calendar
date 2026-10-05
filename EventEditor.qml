@@ -43,6 +43,9 @@ Item {
   property bool series: false
   property string calendarRef: ""
   property bool confirmingDelete: false
+  // One width for every field label (SHOW AS, STARTS, ENDS / LAST DAY), wide
+  // enough for the longest, so the columns line up on every kind of event.
+  readonly property real labelWidth: Style.space(76)
 
   // Guest changes in this edit, sent with Save (see Model.guestEdit).
   property var invited: []
@@ -230,7 +233,7 @@ Item {
     Row {
       visible: editor.editable
       spacing: Style.space(10)
-      Caption { anchors.verticalCenter: parent.verticalCenter; text: "SHOW AS"; width: Style.space(60) }
+      Caption { anchors.verticalCenter: parent.verticalCenter; text: "SHOW AS"; width: editor.labelWidth }
       ButtonGroup {
         options: [
           { label: "Busy", value: "busy", tooltip: "Others see you as busy" },
@@ -250,17 +253,19 @@ Item {
     }
 
     // Starts and ends. All-day events end on their last day, as people say it.
+    // A Grid skips hidden items, so with the times hidden a third column
+    // would pull LAST DAY up beside STARTS: all-day events get two columns.
     Grid {
-      columns: 3
+      columns: editor.allDay ? 2 : 3
       columnSpacing: Style.space(8)
       rowSpacing: Style.space(6)
       verticalItemAlignment: Grid.AlignVCenter
 
-      Caption { text: "STARTS"; width: Style.space(60) }
+      Caption { text: "STARTS"; width: editor.labelWidth }
       Field { id: dateField; width: Style.space(120); placeholderText: "2026-10-02" }
       Field { id: fromField; visible: !editor.allDay; width: Style.space(90); placeholderText: "14:30" }
 
-      Caption { text: editor.allDay ? "LAST DAY" : "ENDS"; width: Style.space(60) }
+      Caption { text: editor.allDay ? "LAST DAY" : "ENDS"; width: editor.labelWidth }
       Field { id: endDateField; width: Style.space(120); placeholderText: "2026-10-02" }
       Field { id: toField; visible: !editor.allDay; width: Style.space(90); placeholderText: "15:30" }
     }
