@@ -470,6 +470,7 @@ Item {
       EventEditor {
         id: sheetEditor
         width: parent.width
+        height: implicitHeight
         draft: layout.p && layout.p.modern ? layout.p.draft : null
         event: layout.p ? layout.p.draftEvent : null
         calendars: layout.p ? layout.p.editableCalendars : []

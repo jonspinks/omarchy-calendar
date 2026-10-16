@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 
 from . import files
-from .model import find_join, guest, guest_fields, join_kind, parse_instant, utc_iso
+from .model import find_join, guest, guest_fields, join_kind, parse_instant, plain_notes, utc_iso
 
 API = "https://graph.microsoft.com/v1.0"
 RESPONSES = {"accepted": "accepted", "tentativelyAccepted": "tentative", "declined": "declined",
@@ -94,10 +94,17 @@ def normalise(account, cal, e, me=""):
     url = (e.get("onlineMeeting") or {}).get("joinUrl")
     if url and url.startswith("https://"):
         join = {"url": url, "kind": join_kind(url)}
+    body = e.get("body") if isinstance(e.get("body"), dict) else None
+    notes = None
+    if body is not None and "content" in body:
+        # "text" is already plain. Anything else (HTML, or omitted) is an
+        # invitation page: the Zoom id and passcode live in there.
+        notes = plain_notes(body.get("content") or "", html=(body.get("contentType") or "").lower() != "text")
     if not join:
-        join = find_join((e.get("location") or {}).get("displayName"), (e.get("body") or {}).get("content"))
+        join = find_join((e.get("location") or {}).get("displayName"),
+                         None if notes is None else (body or {}).get("content"))
     status = "cancelled" if e.get("isCancelled") else ("tentative" if e.get("showAs") == "tentative" else "confirmed")
-    return {
+    event = {
         "uid": "%s/%s/%s" % (account, cal["id"], e["id"]),
         "account": account, "calendar": cal["id"],
         "title": e.get("subject") or "(no title)",
@@ -119,6 +126,11 @@ def normalise(account, cal, e, me=""):
         "remind": [int(e.get("reminderMinutesBeforeStart") or 0)] if e.get("isReminderOn") else [],
         **guests(e, organizer, response, me),
     }
+    # No "notes" key when this delta item left the body out, so a later merge
+    # can keep the notes already saved instead of wiping them.
+    if notes is not None:
+        event["notes"] = notes
+    return event
 
 
 # A delta can report a changed event with only the fields that changed (seen

@@ -10,6 +10,8 @@ A normalised event:
     start, end   all-day: "YYYY-MM-DD", end exclusive (the day after the last)
                  timed:   ISO 8601 in UTC, "YYYY-MM-DDTHH:MM:SSZ"
     location     free text, or ""
+    notes        the invitation body as plain text, or "". Absent on a Graph
+                 delta item that did not carry the body: the previous notes stay.
     join         {"url", "kind"} with kind teams | zoom | meet | webex | other,
                  or None
     response     accepted | tentative | declined | needsAction | organizer | none
@@ -35,6 +37,7 @@ kept as UTC instants: local time is applied only when something is displayed,
 so a time-zone change never rewrites the cache.
 """
 
+import html as html_lib
 import re
 from datetime import datetime, timezone
 
@@ -48,6 +51,56 @@ JOIN_PATTERNS = [
 ]
 
 TAGS = re.compile(r"<[^>]+>")
+# One invitation's notes, after the HTML is gone. Long enough for a Zoom
+# invite plus an agenda, short enough that one event cannot fill the cache.
+NOTES_CAP = 8000
+_SKIP = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.I | re.S)
+_ANCHOR = re.compile(r"""<a\b[^>]*?\bhref\s*=\s*(['"])(.*?)\1[^>]*>(.*?)</a>""", re.I | re.S)
+_BLOCK = re.compile(r"<br\s*/?>|</(?:p|div|tr|li|h[1-6]|blockquote|table)>", re.I)
+_HTMLISH = re.compile(r"<(?:br|p|div|a|span|html|body|table|font)\b", re.I)
+# Outlook's plain form of a link, left behind once the HTML is decoded.
+_WRAPPED_LINK = re.compile(r"<(https?://|mailto:|tel:)([^>\s]+)>", re.I)
+
+
+def _anchor_text(match):
+    """Visible text, and the https link when the text does not already show it."""
+    href = html_lib.unescape(match.group(2)).replace("&amp;", "&").strip()
+    inner = " ".join(html_lib.unescape(TAGS.sub(" ", match.group(3))).split())
+    if href.startswith(("https://", "http://")) and href not in inner:
+        return (inner + " " + href).strip()
+    return inner or href
+
+
+def plain_notes(text, html=None):
+    """Meeting notes as plain text. An HTML invitation becomes readable lines.
+
+    Empty when there is nothing to show. Capped at NOTES_CAP.
+    """
+    if not text:
+        return ""
+    raw = str(text).replace("\r\n", "\n").replace("\r", "\n")
+    if html is None:
+        html = bool(_HTMLISH.search(raw))
+    if html:
+        raw = _SKIP.sub(" ", raw)
+        raw = _ANCHOR.sub(_anchor_text, raw)
+        raw = _BLOCK.sub("\n", raw)
+        raw = TAGS.sub("", raw)
+        raw = html_lib.unescape(raw).replace("\xa0", " ")
+    lines = [" ".join(line.split()) for line in raw.split("\n")]
+    out, blank = [], False
+    for line in lines:
+        if not line:
+            if out and not blank:
+                out.append("")
+            blank = True
+            continue
+        blank = False
+        out.append(line)
+    notes = _WRAPPED_LINK.sub(lambda m: m.group(1) + m.group(2), "\n".join(out).strip())
+    if len(notes) > NOTES_CAP:
+        notes = notes[:NOTES_CAP - 1].rstrip() + "…"
+    return notes
 
 
 def find_join(*texts):

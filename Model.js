@@ -365,7 +365,7 @@ function indexEvents(data, use24h) {
       byDay[day.key].push({
         uid: e.uid, title: e.title, label: day.label, sort: day.sort,
         color: cinfo.color, calendarName: cinfo.name, account: e.account,
-        location: e.location || "", join: e.join || null, webLink: e.webLink || "",
+        location: e.location || "", notes: e.notes || "", join: e.join || null, webLink: e.webLink || "",
         response: e.response, declined: e.response === "declined",
         allDay: e.allDay || day.label === "All day", start: e.start, end: e.end,
         organizer: !!e.organizer, recurring: !!e.recurring,

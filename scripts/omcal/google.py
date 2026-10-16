@@ -13,7 +13,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 from . import auth
-from .model import find_join, guest, guest_fields, join_kind, parse_instant, utc_iso
+from .model import find_join, guest, guest_fields, join_kind, parse_instant, plain_notes, utc_iso
 
 API = "https://www.googleapis.com/calendar/v3"
 
@@ -90,6 +90,7 @@ def normalise(account, cal, e):
         "title": e.get("summary") or "(no title)",
         "allDay": all_day, "start": start, "end": end,
         "location": e.get("location", ""),
+        "notes": plain_notes(e.get("description") or ""),
         "join": join,
         "response": response,
         "organizer": organizer,

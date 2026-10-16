@@ -33,6 +33,11 @@ Item {
 
   readonly property bool creating: !!draft && draft.mode === "create"
   readonly property bool editable: creating || (!!event && event.editable)
+  // The calendar entry's notes. Empty when the event has none, so the field stays hidden.
+  readonly property string notesText: {
+    var row = editor.event
+    return (row && row.notes ? String(row.notes) : "").trim()
+  }
   readonly property bool invitation: !!event && !event.organizer
   readonly property bool removable: !!event && (event.editable || event.calendarEditable)
   readonly property bool recurring: !!event && event.recurring
@@ -275,6 +280,36 @@ Item {
       visible: editor.editable || text !== ""
       width: parent.width
       placeholderText: "Location"
+    }
+
+    // Shown when the entry has notes. Width is the form's own width: a nested
+    // column, or a text height tied to contentHeight, laid out as nothing.
+    Caption {
+      visible: editor.notesText !== ""
+      text: "NOTES"
+    }
+    Rectangle {
+      id: notesBox
+      visible: editor.notesText !== ""
+      width: form.width
+      height: notesBody.implicitHeight + Style.space(16)
+      radius: Style.cornerRadius
+      color: Qt.rgba(editor.foreground.r, editor.foreground.g, editor.foreground.b, 0.06)
+      border.width: Style.spacing.hairline
+      border.color: Qt.rgba(editor.foreground.r, editor.foreground.g, editor.foreground.b, 0.25)
+
+      Text {
+        id: notesBody
+        x: Style.space(8)
+        y: Style.space(8)
+        width: notesBox.width - Style.space(16)
+        wrapMode: Text.WordWrap
+        textFormat: Text.PlainText
+        text: editor.notesText
+        color: editor.foreground
+        font.family: editor.fontFamily
+        font.pixelSize: Style.font.body
+      }
     }
 
     // ---- Who's invited, and what they said.

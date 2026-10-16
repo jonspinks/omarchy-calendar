@@ -87,7 +87,7 @@ def sync_account(a, full, log):
             for u in removed:
                 st["events"].pop(u, None)
             for e in events:
-                st["events"][e["uid"]] = e
+                st["events"][e["uid"]] = with_notes(e, st["events"].get(e["uid"]))
             st["calendars"][cal["id"]] = dict(cal, cursor=cursor,
                                               fullAt=now if whole else prev.get("fullAt", now))
             log("  %s / %s: %s, %d changed, %d removed" % (a["name"], cal["name"] or cal["id"],
@@ -103,6 +103,15 @@ def sync_account(a, full, log):
     st["status"], st["error"] = status, error
     write_private(path, st)
     return st
+
+
+def with_notes(fresh, stored):
+    """A delta item that left the body out keeps the notes already saved."""
+    if "notes" in fresh:
+        return fresh
+    fresh = dict(fresh)
+    fresh["notes"] = (stored or {}).get("notes") or ""
+    return fresh
 
 
 def _fetch(a, prov, tok, cal, window, cursor):

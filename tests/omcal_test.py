@@ -7,8 +7,9 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-from omcal.model import find_join, parse_instant, utc_iso  # noqa: E402
-from omcal.sync import dedupe  # noqa: E402
+from omcal.model import find_join, parse_instant, plain_notes, utc_iso  # noqa: E402
+from omcal.sync import dedupe, with_notes  # noqa: E402
+from omcal import google, graph  # noqa: E402
 from omcal import files  # noqa: E402
 import io  # noqa: E402
 import tempfile  # noqa: E402
@@ -27,6 +28,70 @@ class JoinLinks(unittest.TestCase):
     def test_only_https_and_known_hosts(self):
         self.assertIsNone(find_join("http://teams.microsoft.com/l/meetup-join/x"))
         self.assertIsNone(find_join("https://evil.example/zoom.us/j/1"))
+
+
+CAL = {"id": "c", "editable": True, "defaultRemind": []}
+
+
+class Notes(unittest.TestCase):
+    def test_plain_text_keeps_lines_and_angles(self):
+        self.assertEqual(plain_notes("use a < b\n\n\nok", html=False), "use a < b\n\nok")
+
+    def test_html_invitation_keeps_the_zoom_link_and_drops_style(self):
+        html = """<html><body><p>Join Zoom Meeting<br>
+<a href="https://us02web.zoom.us/j/555?pwd=secret">click</a></p>
+<p>Meeting ID: 555<br>Passcode: secret</p>
+<style>p{color:red}</style></body></html>"""
+        notes = plain_notes(html, html=True)
+        self.assertIn("https://us02web.zoom.us/j/555?pwd=secret", notes)
+        self.assertIn("Passcode: secret", notes)
+        self.assertNotIn("color:red", notes)
+        self.assertNotIn("<", notes)
+
+    def test_outlook_angle_links_unwrap(self):
+        raw = "Join &lt;https://rbcteams.webex.com/meet/abc&gt; or &lt;mailto:a@b.co&gt;"
+        notes = plain_notes("<p>%s</p>" % raw, html=True)
+        self.assertIn("https://rbcteams.webex.com/meet/abc", notes)
+        self.assertIn("a@b.co", notes)
+        self.assertNotIn("<", notes)
+
+    def test_cap(self):
+        notes = plain_notes("x" * 9000, html=False)
+        self.assertTrue(notes.endswith("…"))
+        self.assertLessEqual(len(notes), 8000)
+
+    def test_google_keeps_the_description(self):
+        e = {"id": "z", "summary": "Standup", "etag": "1", "status": "confirmed",
+             "start": {"dateTime": "2026-10-16T15:00:00Z"}, "end": {"dateTime": "2026-10-16T15:30:00Z"},
+             "description": "Join: https://acme.zoom.us/j/123?pwd=abc\nMeeting ID: 123\nPasscode: 999"}
+        n = google.normalise("P", CAL, e)
+        self.assertIn("Passcode: 999", n["notes"])
+        self.assertEqual(n["join"]["kind"], "zoom")
+
+    def test_graph_html_body_becomes_notes(self):
+        html = '<p>Join <a href="https://us02web.zoom.us/j/555?pwd=secret">the meeting</a></p><p>Passcode: secret</p>'
+        e = {"id": "z", "subject": "Call", "isOrganizer": False,
+             "start": {"dateTime": "2026-10-16T15:00:00.0000000"},
+             "end": {"dateTime": "2026-10-16T16:00:00.0000000"},
+             "responseStatus": {"response": "accepted"},
+             "body": {"contentType": "html", "content": html}}
+        n = graph.normalise("W", CAL, e, "me@x.example")
+        self.assertIn("https://us02web.zoom.us/j/555?pwd=secret", n["notes"])
+        self.assertIn("Passcode: secret", n["notes"])
+        self.assertEqual(n["join"]["kind"], "zoom")
+
+    def test_graph_without_a_body_does_not_invent_empty_notes(self):
+        e = {"id": "z", "subject": "Call", "isOrganizer": True,
+             "start": {"dateTime": "2026-10-16T15:00:00.0000000"},
+             "end": {"dateTime": "2026-10-16T16:00:00.0000000"},
+             "responseStatus": {"response": "organizer"}}
+        n = graph.normalise("W", CAL, e, "me@x.example")
+        self.assertNotIn("notes", n)
+
+    def test_a_later_delta_keeps_saved_notes(self):
+        self.assertEqual(with_notes({"uid": "a", "title": "T"}, {"notes": "Passcode: 1"})["notes"], "Passcode: 1")
+        self.assertEqual(with_notes({"uid": "a", "notes": "new"}, {"notes": "old"})["notes"], "new")
+        self.assertEqual(with_notes({"uid": "a"}, None)["notes"], "")
 
 
 class Instants(unittest.TestCase):
