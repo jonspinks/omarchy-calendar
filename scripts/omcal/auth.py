@@ -1,9 +1,10 @@
-"""Accounts, the keyring, and signing in to Google and Microsoft 365.
+"""Accounts, the keyring, and signing in to Google, Microsoft 365 and CalDAV.
 
 Secrets never touch disk here. Each account's refresh token (and, for Google,
-the OAuth client secret) is stored in the GNOME keyring through secret-tool,
-under service=blacksheep.calendar account=<name>. The config file holds only
-what is not secret: names, providers, tenant and client IDs.
+the OAuth client secret; for CalDAV, the app password) is stored in the GNOME
+keyring through secret-tool, under service=blacksheep.calendar account=<name>.
+The config file holds only what is not secret: names, providers, tenant and
+client IDs, CalDAV addresses and user names.
 """
 
 import base64
@@ -305,3 +306,65 @@ def ms_access(a):
         s["refresh_token"] = t["refresh_token"]
         secret_store(a["name"], s)
     return t["access_token"]
+
+
+# ---------------------------------------------------------------- CalDAV
+
+def add_fastmail(name, email):
+    """Fastmail: the calendar home is known from the address alone."""
+    from .caldav import fastmail_home
+    if "@" not in email:
+        die("that doesn't look like a Fastmail address")
+    add_caldav(name, fastmail_home(email), email, what="Fastmail")
+
+
+def add_icloud(name, apple_id):
+    """iCloud: the calendar home is found by asking iCloud, once signed in."""
+    from .caldav import ICLOUD
+    if "@" not in apple_id:
+        die("that doesn't look like an Apple ID (an email address)")
+    add_caldav(name, ICLOUD, apple_id, what="iCloud")
+
+
+def add_caldav(name, url, user, what="the server"):
+    """Any CalDAV server, signed in with a user name and an (app) password.
+
+    The password is asked for without echoing it, or read from stdin when
+    that isn't a terminal (so a password manager can pipe it in), never taken
+    from the command line (where ps and the shell history would see it), and
+    checked against the server before anything is saved.
+    """
+    import getpass
+    from . import caldav
+    check_name(name)
+    if not url.endswith("/"):
+        url += "/"
+    try:
+        caldav.check_url(url)
+    except AuthError as e:
+        die(str(e))
+    interactive = sys.stdin.isatty()
+    if what == "Fastmail" and interactive:
+        print("Make an app password for this at Fastmail: Settings > Privacy & Security >\n"
+              "Manage app passwords > New app password, with access to Calendars (CalDAV).\n")
+    if what == "iCloud" and interactive:
+        print("iCloud takes an app-specific password, not your Apple ID password: make one at\n"
+              "appleid.apple.com > Sign-In and Security > App-Specific Passwords.\n")
+    password = (getpass.getpass("App password for %s: " % user) if interactive
+                else sys.stdin.readline().rstrip("\r\n"))
+    if not password:
+        die("no password given; nothing saved")
+    try:
+        url = caldav.home(caldav.Session(url, user, password))
+        found = caldav.calendars(caldav.Session(url, user, password))
+    except AuthError:
+        die("%s refused that password. Check the user name (%s), and that the app\n"
+            "password has CalDAV access." % (what, user))
+    except HttpError as e:
+        die("%s answered, but not as a CalDAV calendar home: %s" % (what, e))
+    except (urllib.error.URLError, OSError) as e:
+        die("couldn't reach %s: %s" % (url, getattr(e, "reason", e)))
+    secret_store(name, {"password": password})
+    save_account({"name": name, "provider": "caldav", "url": url, "user": user,
+                  "email": user if "@" in user else ""})
+    print("Added %s (%s): %d calendar%s." % (name, user, len(found), "" if len(found) == 1 else "s"))
