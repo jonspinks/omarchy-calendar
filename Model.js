@@ -447,10 +447,30 @@ function stepAnchor(view, anchorKey, delta) {
 }
 
 var MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+var MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August",
+                   "September", "October", "November", "December"]
+var WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+var WEEKDAYS_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 function shortDay(key) {
   var d = keyToDate(key)
   return d.getDate() + " " + MONTHS_SHORT[d.getMonth()]
+}
+
+// The event editor's date button. English, like the rest of the interface:
+// "Fri 2 Oct 2026" on the field, "Friday, 2 October 2026" in the popup.
+function formatDayField(key) {
+  var norm = parseDateText(key)
+  if (!norm) return ""
+  var d = keyToDate(norm)
+  return WEEKDAYS_SHORT[d.getDay()] + " " + d.getDate() + " " + MONTHS_SHORT[d.getMonth()] + " " + d.getFullYear()
+}
+
+function formatDayLong(key) {
+  var norm = parseDateText(key)
+  if (!norm) return ""
+  var d = keyToDate(norm)
+  return WEEKDAYS_LONG[d.getDay()] + ", " + d.getDate() + " " + MONTHS_LONG[d.getMonth()] + " " + d.getFullYear()
 }
 
 function rangeTitle(view, anchorKey, weekStart) {
@@ -865,6 +885,8 @@ if (typeof module !== "undefined") {
     lifeProgressPercent: lifeProgressPercent,
     monthGrid: monthGrid,
     stepMonth: stepMonth,
+    formatDayField: formatDayField,
+    formatDayLong: formatDayLong,
     clockFormats: clockFormats,
     clockFormatRing: clockFormatRing,
     nextClockFormat: nextClockFormat,

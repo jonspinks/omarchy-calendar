@@ -5,7 +5,8 @@ const path = require("path")
 const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders," +
-  " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary }")()
+  " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary," +
+  " formatDayField, formatDayLong }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -18,6 +19,9 @@ function eq(got, want, name) {
 eq(["9", "9:30", "0930", "14:30", "2pm", "2:30 pm", "12am", "12pm", "24:00", "13pm", "9:75"].map(M.parseClock),
    [540, 570, 570, 870, 840, 870, 0, 720, -1, -1, -1], "parseClock")
 eq(["2026-10-02", "2026-10-2", "2026-2-30", "x"].map(M.parseDateText), ["2026-10-02", "2026-10-02", "", ""], "parseDateText")
+eq(M.formatDayField("2026-10-02"), "Fri 2 Oct 2026", "formatDayField")
+eq(M.formatDayLong("2026-10-02"), "Friday, 2 October 2026", "formatDayLong")
+eq([M.formatDayField("2026-02-31"), M.formatDayLong(""), M.formatDayField("nope")], ["", "", ""], "formatDay: blank when it isn't a day")
 
 // New events: options can't be smuggled in through a title.
 let d = M.newDraft("2026-10-02", new Date(2026, 8, 27, 21, 10), "Google/c")

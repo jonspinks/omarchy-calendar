@@ -962,6 +962,9 @@ Panel {
             event: root.draftEvent
             showGuests: false
             calendars: root.editableCalendars
+            todayKey: root.todayKey
+            weekStart: root.weekStart
+            byDay: root.eventIndex.byDay
             saving: root.writingUid !== ""
             error: root.editorError
             foreground: root.contentForeground

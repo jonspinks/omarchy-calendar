@@ -24,6 +24,11 @@ Item {
   property string error: ""
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  // Handed to the date popup. DateField cannot read these off Color itself.
+  readonly property color themeAccent: Color.accent
+  readonly property color themeInk: Color.background
+  readonly property color themePopupBg: Color.popups.background
+  readonly property color themePopupEdge: Color.popups.border
 
   signal save(var draft)
   signal cancel()
@@ -47,6 +52,10 @@ Item {
   property bool busyTouched: false
   property bool series: false
   property string calendarRef: ""
+  // The date popup follows the calendar's week and marks busy days on it.
+  property string todayKey: ""
+  property int weekStart: 1
+  property var byDay: ({})
   property bool confirmingDelete: false
   // One width for every field label (SHOW AS, STARTS, ENDS / LAST DAY), wide
   // enough for the longest, so the columns line up on every kind of event.
@@ -65,12 +74,14 @@ Item {
   implicitHeight: form.implicitHeight
 
   function load() {
+    dateField.close()
+    endDateField.close()
     if (!draft) return
     titleField.text = draft.title
     locationField.text = draft.location
     inviteField.text = draft.invite || ""
-    dateField.text = draft.date
-    endDateField.text = draft.endDate
+    dateField.date = draft.date
+    endDateField.date = draft.endDate
     fromField.text = draft.from
     toField.text = draft.to
     editor.allDay = draft.allDay
@@ -97,8 +108,8 @@ Item {
     d.title = titleField.text
     d.location = locationField.text
     d.invite = inviteField.text
-    d.date = dateField.text
-    d.endDate = endDateField.text
+    d.date = dateField.date
+    d.endDate = endDateField.date
     d.from = fromField.text
     d.to = toField.text
     d.allDay = editor.allDay
@@ -257,7 +268,8 @@ Item {
       }
     }
 
-    // Starts and ends. All-day events end on their last day, as people say it.
+    // Starts and ends. The dates open a month; the times stay typed.
+    // All-day events end on their last day, as people say it.
     // A Grid skips hidden items, so with the times hidden a third column
     // would pull LAST DAY up beside STARTS: all-day events get two columns.
     Grid {
@@ -267,11 +279,37 @@ Item {
       verticalItemAlignment: Grid.AlignVCenter
 
       Caption { text: "STARTS"; width: editor.labelWidth }
-      Field { id: dateField; width: Style.space(120); placeholderText: "2026-10-02" }
+      DateField {
+        id: dateField
+        readOnly: !editor.editable || editor.saving
+        todayKey: editor.todayKey
+        weekStart: editor.weekStart
+        byDay: editor.byDay
+        foreground: editor.foreground
+        accent: editor.themeAccent
+        ink: editor.themeInk
+        popupBackground: editor.themePopupBg
+        popupBorder: editor.themePopupEdge
+        fontFamily: editor.fontFamily
+        onPopupOpened: endDateField.close()
+      }
       Field { id: fromField; visible: !editor.allDay; width: Style.space(90); placeholderText: "14:30" }
 
       Caption { text: editor.allDay ? "LAST DAY" : "ENDS"; width: editor.labelWidth }
-      Field { id: endDateField; width: Style.space(120); placeholderText: "2026-10-02" }
+      DateField {
+        id: endDateField
+        readOnly: !editor.editable || editor.saving
+        todayKey: editor.todayKey
+        weekStart: editor.weekStart
+        byDay: editor.byDay
+        foreground: editor.foreground
+        accent: editor.themeAccent
+        ink: editor.themeInk
+        popupBackground: editor.themePopupBg
+        popupBorder: editor.themePopupEdge
+        fontFamily: editor.fontFamily
+        onPopupOpened: dateField.close()
+      }
       Field { id: toField; visible: !editor.allDay; width: Style.space(90); placeholderText: "15:30" }
     }
 
