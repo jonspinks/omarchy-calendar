@@ -405,7 +405,15 @@ function dayTitle(key, todayKey) {
 
 // ---- Views: which days each shows, and where Previous and Next go.
 
-var VIEWS = ["day", "week", "workweek", "month", "year"]
+// Keys 1 to 6 follow this order. "days" is the next few days from the
+// selected one (Google's "X days"), added last so 1 to 5 keep their views.
+var VIEWS = ["day", "week", "workweek", "month", "year", "days"]
+
+// How many days the "days" view shows: 2 to 7, 4 when unset or not a number.
+function daysCount(value) {
+  var n = parseInt(String(value), 10)
+  return isNaN(n) ? 4 : Math.max(2, Math.min(7, n))
+}
 
 function keyToDate(key) {
   var p = String(key).split("-")
@@ -418,10 +426,13 @@ function weekStartKey(key, weekStart) {
   return addDays(key, -back)
 }
 
-function viewDays(view, anchorKey, weekStart) {
+function viewDays(view, anchorKey, weekStart, count) {
   var days = []
   if (view === "day") {
     days = [anchorKey]
+  } else if (view === "days") {
+    // From the selected day on: no days already gone, unless you step back.
+    for (var k = 0; k < daysCount(count); k++) days.push(addDays(anchorKey, k))
   } else if (view === "week") {
     var first = weekStartKey(anchorKey, weekStart)
     for (var i = 0; i < 7; i++) days.push(addDays(first, i))
@@ -435,9 +446,10 @@ function viewDays(view, anchorKey, weekStart) {
   return days
 }
 
-function stepAnchor(view, anchorKey, delta) {
+function stepAnchor(view, anchorKey, delta, count) {
   var d = keyToDate(anchorKey)
   if (view === "day") return addDays(anchorKey, delta)
+  if (view === "days") return addDays(anchorKey, daysCount(count) * delta)
   if (view === "week" || view === "workweek") return addDays(anchorKey, 7 * delta)
   if (view === "month") {
     var m = new Date(d.getFullYear(), d.getMonth() + delta, 1)
@@ -473,8 +485,12 @@ function formatDayLong(key) {
   return WEEKDAYS_LONG[d.getDay()] + ", " + d.getDate() + " " + MONTHS_LONG[d.getMonth()] + " " + d.getFullYear()
 }
 
-function rangeTitle(view, anchorKey, weekStart) {
+function rangeTitle(view, anchorKey, weekStart, count) {
   var d = keyToDate(anchorKey)
+  if (view === "days") {
+    var span = viewDays(view, anchorKey, weekStart, count)
+    return shortDay(span[0]) + " – " + shortDay(span[span.length - 1])
+  }
   if (view === "day") {
     var names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
     return names[d.getDay()] + " " + shortDay(anchorKey) + " " + d.getFullYear()
