@@ -6,7 +6,7 @@ const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary," +
-  " formatDayField, formatDayLong }")()
+  " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, VIEWS }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -129,6 +129,17 @@ eq(/^r[0-9a-f]{16}$/.test(a), true, "claim: short and file-safe")
 const snz = M.dueSnoozes({ events: [{ uid: "u1", start: "2026-10-25T14:00:00Z", end: "2026-10-25T15:00:00Z", allDay: false }] },
                        { "snooze:u1": Date.parse("2026-10-25T14:10:00Z") }, Date.parse("2026-10-25T14:11:00Z"))
 eq(snz.map(r => r.id), ["snooze:u1@" + Date.parse("2026-10-25T14:10:00Z")], "claim: snooze ids carry their time")
+
+
+// The days view: the next few days from the selected one (#4).
+eq(M.viewDays("days", "2026-10-25", 1, 4), ["2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28"], "days: from the selected day, no past days")
+eq(M.viewDays("days", "2026-10-30", 1, 3), ["2026-10-30", "2026-10-31", "2026-11-01"], "days: across a month end")
+eq(M.viewDays("days", "2026-10-25", 1).length, 4, "days: four when unset")
+eq([M.daysCount("2"), M.daysCount(9), M.daysCount(1), M.daysCount("x"), M.daysCount(undefined)], [2, 7, 2, 4, 4], "days: 2 to 7, else 4")
+eq([M.stepAnchor("days", "2026-10-25", 1, 4), M.stepAnchor("days", "2026-10-25", -1, 3)], ["2026-10-29", "2026-10-22"], "days: steps by the days shown")
+eq(M.rangeTitle("days", "2026-10-25", 1, 4), "25 Oct – 28 Oct", "days: title")
+eq(M.VIEWS.slice(0, 5), ["day", "week", "workweek", "month", "year"], "days: keys 1 to 5 keep their views")
+eq(M.VIEWS[5], "days", "days: key 6")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

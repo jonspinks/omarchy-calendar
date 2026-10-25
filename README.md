@@ -20,9 +20,11 @@ ones you care about and hide the rest.
 
 ![The month, with every calendar in it and what's next on the left](screenshots/1-month.png)
 
-**Day, week, working week, month and year.** Switch with the buttons or
-keys 1 to 5. The week shows meetings side by side when they overlap, and a
-line for right now.
+**Day, week, working week, month, year, and the next few days.** Switch with
+the buttons or keys 1 to 6. The week shows meetings side by side when they
+overlap, and a line for right now. The days view (key 6) starts at the day
+you've picked, today unless you've stepped away, and shows that day and the
+next few, so none of the screen goes on days already gone.
 
 ![A week, with the next meeting and its Join button in the corner](screenshots/2-week.png)
 
@@ -131,14 +133,15 @@ ID. If the organisation requires admin consent, an admin has to grant it once.
 - **Calendars:** click one in the list on the left to show or hide it. A
   hidden calendar isn't downloaded at all. `calendar-ctl choose` does the
   same in a checklist.
-- **Keys:** `1`–`5` views, `[` `]` or the arrow keys to step, `t` today,
+- **Keys:** `1`–`6` views, `[` `]` or the arrow keys to step, `t` today,
   `n` new event, `w` to flip the first day of the week.
 - **Sync** runs every three minutes while the shell runs, and when you open
   the calendar. `calendar-ctl sync` runs one by hand.
 
 **Settings** (in the widget's entry in `shell.json`, all optional):
 `"layout": "classic"` starts in compact mode; `"reminders": false` turns
-reminders off; `"view"` is the view it opens in; `"format"` is the clock's
+reminders off; `"view"` is the view it opens in; `"daysCount"` is how many
+days the days view shows (2 to 7, 4 by default); `"format"` is the clock's
 own format, and its 12- or 24-hour choice carries into the calendar.
 
 **Key bindings:** the calendar answers IPC, so you can bind keys to it, e.g.

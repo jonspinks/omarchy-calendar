@@ -27,7 +27,7 @@ Item {
     if (p.viewMode === "month")
       return ["January", "February", "March", "April", "May", "June", "July", "August",
               "September", "October", "November", "December"][p.viewMonth] + " " + p.viewYear
-    return Model.rangeTitle(p.viewMode, p.selectedKey, p.weekStart)
+    return Model.rangeTitle(p.viewMode, p.selectedKey, p.weekStart, p.daysCount)
   }
 
   // ---------------------------------------------------------------- header
@@ -406,7 +406,7 @@ Item {
       id: timeGrid
       visible: layout.p && layout.p.isTimeView
       width: parent.width
-      days: layout.p ? Model.viewDays(layout.p.viewMode, layout.p.selectedKey, layout.p.weekStart) : []
+      days: layout.p ? Model.viewDays(layout.p.viewMode, layout.p.selectedKey, layout.p.weekStart, layout.p.daysCount) : []
       byDay: layout.p ? layout.p.eventIndex.byDay : ({})
       todayKey: layout.p ? layout.p.todayKey : ""
       use24h: layout.p ? layout.p.use24h : false

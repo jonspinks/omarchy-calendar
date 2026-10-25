@@ -105,11 +105,14 @@ Panel {
     { label: "Day", value: "day", tooltip: "One day (1)" },
     { label: "Week", value: "week", tooltip: "Seven days (2)" },
     { label: "Work week", value: "workweek", tooltip: "Monday to Friday (3)" },
+    { label: root.daysCount + " days", value: "days", tooltip: "The next " + root.daysCount + " days from the selected one (6)" },
     { label: "Month", value: "month", tooltip: "The month grid (4)" },
     { label: "Year", value: "year", tooltip: "Twelve months (5)" }
   ]
   property string viewMode: Model.VIEWS.indexOf(String(setting("view", "month"))) >= 0 ? String(setting("view", "month")) : "month"
-  readonly property bool isTimeView: modern && (viewMode === "day" || viewMode === "week" || viewMode === "workweek")
+  readonly property bool isTimeView: modern && (viewMode === "day" || viewMode === "week" || viewMode === "workweek" || viewMode === "days")
+  // How many days the "days" view shows (setting daysCount, 2 to 7).
+  readonly property int daysCount: Model.daysCount(setting("daysCount", 4))
 
   function setView(v) {
     if (Model.VIEWS.indexOf(v) < 0 || v === root.viewMode) return
@@ -121,7 +124,7 @@ Panel {
   // Previous and Next: a month in the month view, otherwise the view's own unit.
   function step(delta) {
     if (root.viewMode === "month" || !root.modern) { root.moveMonth(delta); return }
-    root.selectedKey = Model.stepAnchor(root.viewMode, root.selectedKey, delta)
+    root.selectedKey = Model.stepAnchor(root.viewMode, root.selectedKey, delta, root.daysCount)
     root.showSelectedMonth()
   }
 
@@ -134,7 +137,7 @@ Panel {
   // The app layout (ModernLayout.qml) unless the setting asks for the stock one.
   // Compact is Omarchy's own panel: the month, and the selected day's
   // appointments under it. The header's collapse button goes there, and its
-  // expand button (or keys 1 to 5) comes back.
+  // expand button (or keys 1 to 6) comes back.
   readonly property bool modern: String(setting("layout", "modern")) !== "classic"
 
   function setLayout(expanded) {
@@ -679,7 +682,7 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
-        if (t >= "1" && t <= "5") { root.setView(Model.VIEWS[Number(t) - 1]); root.setLayout(true) }
+        if (t >= "1" && t <= "6") { root.setView(Model.VIEWS[Number(t) - 1]); root.setLayout(true) }
         else if (t === "[") root.step(-1)
         else if (t === "]") root.step(1)
         else if (t === "{") root.moveYear(-1)
@@ -1002,7 +1005,7 @@ Panel {
             onOpenLink: function(url) { root.openUrl(url) }
           }
 
-          // ---- Which view: only in the expanded layout now (keys 1 to 5
+          // ---- Which view: only in the expanded layout now (keys 1 to 6
           //      expand into one).
           Item {
             visible: false
@@ -1028,7 +1031,7 @@ Panel {
             width: Math.min(parent.width, Style.space(root.viewMode === "day" ? 520 : 880))
             anchors.horizontalCenter: parent.horizontalCenter
             height: implicitHeight
-            days: Model.viewDays(root.viewMode, root.selectedKey, root.weekStart)
+            days: Model.viewDays(root.viewMode, root.selectedKey, root.weekStart, root.daysCount)
             byDay: root.eventIndex.byDay
             todayKey: root.todayKey
             use24h: root.use24h
@@ -1283,7 +1286,7 @@ Panel {
                 horizontalAlignment: Text.AlignHCenter
                 text: (root.viewMode === "month" || !root.modern
                   ? Qt.formatDate(root.viewDate, "MMMM yyyy")
-                  : Model.rangeTitle(root.viewMode, root.selectedKey, root.weekStart)).toUpperCase()
+                  : Model.rangeTitle(root.viewMode, root.selectedKey, root.weekStart, root.daysCount)).toUpperCase()
                 color: Qt.darker(root.contentForeground, 1.4)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
