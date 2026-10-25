@@ -374,20 +374,46 @@ Panel {
     for (var i = 0; i < due.length; i++) {
       for (var j = 0; j < due[i].also.length; j++) fired[due[i].also[j]] = now
       fired["shown:" + due[i].event.uid] = now
-      root.notify(due[i])
+      root.claimAndNotify(due[i])
     }
     // Snoozed reminders come back once their time is up, while the event runs.
     var snoozed = Model.dueSnoozes(root.eventData, fired, now)
     for (var k = 0; k < snoozed.length; k++) {
       delete fired["snooze:" + snoozed[k].event.uid]
       fired["shown:" + snoozed[k].event.uid] = now
-      root.notify(snoozed[k])
+      root.claimAndNotify(snoozed[k])
     }
     if (!due.length && !snoozed.length) return
     // Forget anything over a day old: the file stays small.
     // (A pending snooze is in the future, so it always stays.)
     for (var id in fired) if (now - fired[id] > 86400000) delete fired[id]
     root.saveFired(fired)
+  }
+
+  // Omarchy runs a copy of this widget on every monitor, and each one checks
+  // reminders, so each would send the same one. A reminder goes out from the
+  // copy that claims it: mkdir is atomic, so however many copies try, exactly
+  // one creates the claim folder. Claims live beside the reminded list, in
+  // the user's private runtime folder, and go after two days.
+  readonly property string claimDir: (Quickshell.env("XDG_RUNTIME_DIR") || (root.home + "/.cache")) + "/blacksheep.calendar-claims"
+  property real claimsPrunedAt: 0
+
+  function claimAndNotify(r) {
+    var p = Qt.createQmlObject('import Quickshell.Io; Process {}', root)
+    p.exited.connect(function(code) {
+      if (code === 0) root.notify(r)
+      p.destroy()
+    })
+    // Paths go in as arguments, never into the script text.
+    p.command = ["sh", "-c", 'mkdir -p -m 700 "$1" && mkdir -m 700 "$1/$2"', "claim", root.claimDir, Model.claimName(r.id)]
+    p.running = true
+    if (Date.now() - root.claimsPrunedAt > 3600000) {
+      root.claimsPrunedAt = Date.now()
+      var q = Qt.createQmlObject('import Quickshell.Io; Process {}', root)
+      q.exited.connect(function() { q.destroy() })
+      q.command = ["find", root.claimDir, "-mindepth", "1", "-maxdepth", "1", "-type", "d", "-name", "r*", "-mmin", "+2880", "-delete"]
+      q.running = true
+    }
   }
 
   function saveFired(fired) {
