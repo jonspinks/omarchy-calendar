@@ -4,7 +4,7 @@ const fs = require("fs")
 const path = require("path")
 const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
-  " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders," +
+  " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary," +
   " formatDayField, formatDayLong }")()
 
@@ -116,6 +116,19 @@ e.guestText = "oops"
 eq(M.draftArgs(e).error, "oops isn't an email address.", "guests: typed nonsense stops the save")
 e.guestText = ""; e.title = "New"; e.invited = ["new@x.co"]; e.series = true
 eq(M.draftArgs(e).args, ["update", "P/c/1", "--title", "New", "--invite", "new@x.co", "--series"], "guests: with a title, for the series")
+
+
+// One reminder per reminder, however many monitors run the widget.
+const uid = "Work/AAMkAGFlM2I3MzQ2LWIyY2YtNDk1OC05OWNlLTlkNmM1ZWEzNjVjOABGAAAAAABrWEN4QHQSQZkyyBZHFxZPBwAwQ5yla4kITqFX-eujOloEAADLjJ_0AAA=/x"
+const a = M.claimName(uid + "@1790000000000")
+eq(a, M.claimName(uid + "@1790000000000"), "claim: the same reminder, the same name")
+eq(a === M.claimName(uid + "@1790000600000"), false, "claim: another reminder time, another name")
+eq(M.claimName("snooze:" + uid + "@1") === M.claimName("snooze:" + uid + "@2"), false, "claim: each snooze is its own")
+eq(/^r[0-9a-f]{16}$/.test(a), true, "claim: short and file-safe")
+// The snooze id carries its time, so a second snooze of one event claims afresh.
+const snz = M.dueSnoozes({ events: [{ uid: "u1", start: "2026-10-25T14:00:00Z", end: "2026-10-25T15:00:00Z", allDay: false }] },
+                       { "snooze:u1": Date.parse("2026-10-25T14:10:00Z") }, Date.parse("2026-10-25T14:11:00Z"))
+eq(snz.map(r => r.id), ["snooze:u1@" + Date.parse("2026-10-25T14:10:00Z")], "claim: snooze ids carry their time")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

@@ -609,9 +609,27 @@ function dueSnoozes(data, fired, nowMs) {
     if (!at || nowMs < at) continue
     var end = e.allDay ? keyToDate(e.end).getTime() : new Date(e.end).getTime()
     if (nowMs >= end || e.status === "cancelled") continue
-    out.push({ id: "snooze:" + e.uid, event: e, minutes: Math.round((startMs(e) - nowMs) / 60000), also: [] })
+    // The snooze's own time is in the id: each snooze is a reminder of its own.
+    out.push({ id: "snooze:" + e.uid + "@" + at, event: e, minutes: Math.round((startMs(e) - nowMs) / 60000), also: [] })
   }
   return out
+}
+
+// A short, file-safe name for one reminder, for claiming it. Omarchy runs a
+// copy of the widget per monitor, and each would otherwise send the same
+// reminder; the copy that creates the claim folder of this name sends it.
+// Two 32-bit FNV-1a hashes (different offsets) of the reminder's id: ids are
+// long and full of slashes, folder names can't be.
+function claimName(id) {
+  var s = String(id)
+  function fnv(h) {
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 16777619) >>> 0
+    }
+    return ("0000000" + h.toString(16)).slice(-8)
+  }
+  return "r" + fnv(2166136261) + fnv(84696351)
 }
 
 function reminderText(r, calName, use24h) {
