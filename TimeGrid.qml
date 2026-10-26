@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -22,6 +23,31 @@ Item {
   signal openEvent(var ev)
   signal joinEvent(string url)
   signal pickDay(string key)
+
+  // The all-day events a "+n more" click is naming. The strip keeps the
+  // first two; this is the rest, in the day's own order.
+  property var moreItems: []
+  property var moreAnchor: null
+
+  function openMore(items, anchor) {
+    moreItems = items
+    moreAnchor = anchor
+    // The list has to be built before it can be placed under the link.
+    Qt.callLater(grid.placeMore)
+  }
+
+  function placeMore() {
+    if (!moreAnchor || !moreItems.length) return
+    // x and y are in this grid, the popup's own item, the same way the
+    // date popup sits on its field.
+    var pos = moreAnchor.mapToItem(grid, 0, moreAnchor.height + Style.space(2))
+    var w = morePopup.width
+    morePopup.x = Math.max(0, Math.min(pos.x, Math.max(0, width - w)))
+    morePopup.y = Math.max(0, pos.y)
+    morePopup.open()
+  }
+
+  onDaysChanged: morePopup.close()
 
   readonly property int gutter: Style.space(46)
   readonly property int hourHeight: Style.space(40)
@@ -152,14 +178,101 @@ Item {
           }
         }
 
-        Text {
+        Rectangle {
+          id: moreLink
           visible: allDayCol.items.length > 3
-          leftPadding: Style.space(5)
-          textFormat: Text.PlainText
-          text: "+" + (allDayCol.items.length - 2) + " more"
-          color: Qt.darker(grid.foreground, 1.5)
-          font.family: grid.fontFamily
-          font.pixelSize: Style.font.caption
+          width: parent.width - Style.space(3)
+          height: Style.space(16)
+          radius: Style.cornerRadius
+          color: moreMouse.containsMouse ? Style.hoverFillFor(grid.foreground, Color.accent) : "transparent"
+
+          Text {
+            anchors.fill: parent
+            leftPadding: Style.space(5)
+            verticalAlignment: Text.AlignVCenter
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            text: "+" + (allDayCol.items.length - 2) + " more"
+            color: moreMouse.containsMouse ? grid.foreground : Qt.darker(grid.foreground, 1.5)
+            font.family: grid.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          MouseArea {
+            id: moreMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: grid.openMore(allDayCol.items.slice(2), moreLink)
+          }
+        }
+      }
+    }
+  }
+
+  // Names the all-day events the strip left off. A row opens the event.
+  Popup {
+    id: morePopup
+    padding: Style.space(6)
+    width: Style.space(280)
+    // Counted from the rows, not the column's height: the column is given
+    // its height by the popup, so reading it back stays at nothing.
+    height: Math.min(Style.space(280), grid.moreItems.length * (Style.space(26) + Style.space(2)) + padding * 2)
+    modal: true
+    dim: false
+    focus: true
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+    readonly property var popupBorderSpec: Border.localOrSurfaceSpec("popups", "border", Color.popups.border, Color.popups.border, Style.normalBorderWidth)
+
+    background: BorderSurface {
+      color: Color.popups.background
+      borderSpec: morePopup.popupBorderSpec
+      radius: Style.cornerRadius
+    }
+
+    contentItem: Column {
+      id: moreColumn
+      width: morePopup.availableWidth
+      spacing: Style.space(2)
+
+      Repeater {
+        model: grid.moreItems
+
+        Rectangle {
+          id: moreRow
+          required property var modelData
+          width: moreColumn.width
+          height: Style.space(26)
+          radius: Style.cornerRadius
+          color: Qt.rgba(Qt.color(moreRow.modelData.color).r, Qt.color(moreRow.modelData.color).g, Qt.color(moreRow.modelData.color).b, moreRowMouse.containsMouse ? 0.45 : 0.28)
+          opacity: moreRow.modelData.declined ? 0.5 : 1
+
+          Text {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(8)
+            anchors.rightMargin: Style.space(6)
+            verticalAlignment: Text.AlignVCenter
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            text: moreRow.modelData.title
+            color: grid.foreground
+            font.family: grid.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.strikeout: moreRow.modelData.declined
+          }
+
+          MouseArea {
+            id: moreRowMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+              var ev = moreRow.modelData
+              morePopup.close()
+              grid.openEvent(ev)
+            }
+          }
         }
       }
     }
