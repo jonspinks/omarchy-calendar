@@ -536,7 +536,7 @@ class Wire(Case):
         import io
         import urllib.error
         err = urllib.error.HTTPError(HOME, 412, "Precondition Failed", {}, io.BytesIO(b""))
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch.object(caldav._OPENER, "open", side_effect=err):
             with self.assertRaisesRegex(auth.Conflict, "changed elsewhere"):
                 caldav.Session(HOME, ME, "pw").send("PUT", HOME + "work/x.ics", b"x", {"If-Match": '"1"'})
 

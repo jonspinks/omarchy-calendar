@@ -125,7 +125,7 @@ class Listing(unittest.TestCase):
         import io
         import urllib.error
         err = urllib.error.HTTPError(HOME, 401, "Unauthorized", {}, io.BytesIO(b""))
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch.object(caldav._OPENER, "open", side_effect=err):
             with self.assertRaises(auth.AuthError):
                 caldav.calendars(caldav.Session(HOME, ME, "wrong"))
 
@@ -403,6 +403,68 @@ class Upgrade(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PasswordStaysHome(unittest.TestCase):
+    """The app password goes only to the account's own server."""
+
+    def two_servers(self):
+        """A, which redirects every request to B; B, which notes any password it gets."""
+        import http.server
+        import threading
+        got = []
+
+        class B(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                got.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        b = http.server.HTTPServer(("127.0.0.1", 0), B)
+
+        class A(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:%d/elsewhere" % b.server_port)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        a = http.server.HTTPServer(("127.0.0.1", 0), A)
+        for srv in (a, b):
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            self.addCleanup(srv.server_close)
+            self.addCleanup(srv.shutdown)
+        return a, got
+
+    def test_a_redirect_is_not_followed_and_carries_no_password(self):
+        a, got = self.two_servers()
+        s = caldav.Session("http://127.0.0.1:%d/" % a.server_port, ME, "s3cret")
+        with self.assertRaises(auth.HttpError) as c:
+            s.send("GET", "http://127.0.0.1:%d/event.ics" % a.server_port)
+        self.assertEqual(c.exception.code, 302)
+        self.assertEqual(got, [])   # B was never asked, so never given the password
+
+    def test_another_host_is_refused_before_anything_is_sent(self):
+        s = caldav.Session(HOME, ME, "s3cret")
+        with mock.patch.object(caldav._OPENER, "open", side_effect=AssertionError("nothing may be sent")):
+            with self.assertRaises(caldav.ForeignHost) as c:
+                s.send("GET", "https://attacker.example.net/steal")
+        self.assertIn("attacker.example.net", str(c.exception))
+        self.assertIsInstance(c.exception, auth.HttpError)   # sync reports it like any server error
+
+    def test_which_hosts_are_the_accounts(self):
+        self.assertTrue(caldav.same_service(HOME, "https://caldav.example.com/other/"))
+        self.assertTrue(caldav.same_service("https://caldav.icloud.com/", "https://p42-caldav.icloud.com:443/1/calendars/"))
+        self.assertTrue(caldav.same_service("https://p42-caldav.icloud.com/1/", "https://p17-caldav.icloud.com/1/"))
+        self.assertFalse(caldav.same_service(HOME, "https://other.example.com/"))
+        self.assertFalse(caldav.same_service("https://caldav.icloud.com/", "https://icloud.com.attacker.net/"))
+        self.assertFalse(caldav.same_service("https://dav.example.co.uk/", "https://other.co.uk/"))
+        self.assertFalse(caldav.same_service("https://caldav.fastmail.com/", "https://p42-caldav.icloud.com/"))
 
 
 class Discovery(unittest.TestCase):

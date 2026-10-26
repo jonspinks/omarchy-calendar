@@ -53,6 +53,41 @@ def _t(ns, name):
 
 # ------------------------------------------------------------------- HTTP
 
+# The app password goes with every request, so it goes only to the account's
+# own server: never along a redirect (urllib would copy the header to wherever
+# a 3xx points, http:// included), and never to another host that a reply
+# names in an href. iCloud is the one service that moves an account between
+# its own hosts (caldav.icloud.com to pNN-caldav.icloud.com), so for an iCloud
+# account any icloud.com host is its own. Nothing wider: a rule like "any
+# sibling subdomain" would let dav.example.co.uk hand the password to .co.uk.
+SHARED_DOMAINS = (".icloud.com",)
+
+
+class ForeignHost(auth.HttpError):
+    """A request for a host that isn't the account's server: nothing was sent."""
+
+    def __init__(self, host):
+        RuntimeError.__init__(self, "%s isn't this account's CalDAV server, so the password isn't sent there" % host)
+        self.code = 0
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None   # so urllib raises the 3xx as an HTTPError instead of following it
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def same_service(account_url, url):
+    """Whether url is on the account's own server (see SHARED_DOMAINS)."""
+    a = (urllib.parse.urlsplit(account_url).hostname or "").lower()
+    h = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if a and h == a:
+        return True
+    return any((a == d[1:] or a.endswith(d)) and (h == d[1:] or h.endswith(d)) for d in SHARED_DOMAINS)
+
+
 class Session:
     """What a CalDAV account signs in with: its home URL, user name and password.
 
@@ -74,13 +109,15 @@ class Session:
         status is an HttpError with its code.
         """
         check_url(url)
-        cred = base64.b64encode(("%s:%s" % (self.user, self.password)).encode()).decode()
-        h = {"Authorization": "Basic " + cred}
-        h.update(headers or {})
-        req = urllib.request.Request(url, data=body, method=method, headers=h)
         host = urllib.parse.urlsplit(url).netloc
+        if not same_service(self.url, url):
+            raise ForeignHost(host)
+        cred = base64.b64encode(("%s:%s" % (self.user, self.password)).encode()).decode()
+        req = urllib.request.Request(url, data=body, method=method, headers=dict(headers or {}))
+        # Unredirected as well as never redirected: the header can't travel.
+        req.add_unredirected_header("Authorization", "Basic " + cred)
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with _OPENER.open(req, timeout=30) as r:
                 return r.status, {k.lower(): v for k, v in r.headers.items()}, files.read_reply(r)
         except urllib.error.HTTPError as e:
             if e.code == 401:
