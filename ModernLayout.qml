@@ -461,6 +461,7 @@ Item {
     MouseArea { anchors.fill: parent }   // clicks on the sheet stay on it
 
     Flickable {
+      id: sheetScroll
       anchors.fill: parent
       anchors.margins: Style.space(14)
       contentHeight: sheetEditor.implicitHeight
@@ -473,6 +474,7 @@ Item {
         id: sheetEditor
         width: parent.width
         height: implicitHeight
+        fitHeight: sheetScroll.height
         draft: layout.p && layout.p.modern ? layout.p.draft : null
         event: layout.p ? layout.p.draftEvent : null
         calendars: layout.p ? layout.p.editableCalendars : []

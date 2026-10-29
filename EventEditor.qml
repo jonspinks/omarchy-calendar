@@ -72,6 +72,22 @@ Item {
   readonly property bool hasGuests: guestRows.length > 0 || (!!event && event.guestsHidden)
 
   implicitHeight: form.implicitHeight
+  // The height the editor may fill (the sheet sets it); 0 for no limit.
+  property real fitHeight: 0
+  // How tall the notes text may be: what fitHeight leaves after the rest of
+  // the form, and never less than twelve lines.
+  readonly property real notesRoom: {
+    var least = Style.font.body * 12
+    if (fitHeight <= 0) return least
+    var used = 0, shown = 0
+    for (var i = 0; i < form.children.length; i++) {
+      var c = form.children[i]
+      if (c === notesBox || !c.visible || c.height <= 0) continue
+      used += c.height
+      shown++
+    }
+    return Math.max(least, fitHeight - used - form.spacing * shown - Style.space(16))
+  }
 
   function load() {
     dateField.close()
@@ -324,38 +340,17 @@ Item {
     // Shown when the entry has notes. Width is the form's own width: a nested
     // column, or a text height tied to contentHeight, laid out as nothing.
     // The text can be selected and copied, and https links open in the
-    // browser. Long notes (a Teams footer) scroll inside the box, so the
-    // buttons below stay on screen.
-    Row {
+    // browser. Long notes (a Teams footer) scroll inside the box, which takes
+    // the room the sheet has left, so the buttons below stay on screen.
+    Caption {
       visible: editor.notesText !== ""
-      spacing: Style.space(10)
-      Caption { text: "NOTES" }
-      Caption {
-        id: copyNotes
-        property bool copied: false
-        text: copied ? "COPIED" : "COPY"
-        color: copyMouse.containsMouse ? editor.foreground : Qt.darker(editor.foreground, 1.5)
-        MouseArea {
-          id: copyMouse
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: Qt.PointingHandCursor
-          onClicked: {
-            notesBody.selectAll()
-            notesBody.copy()
-            notesBody.deselect()
-            copyNotes.copied = true
-            copiedTimer.restart()
-          }
-        }
-        Timer { id: copiedTimer; interval: 1500; onTriggered: copyNotes.copied = false }
-      }
+      text: "NOTES"
     }
     Rectangle {
       id: notesBox
       visible: editor.notesText !== ""
       width: form.width
-      height: Math.min(notesBody.implicitHeight, Style.font.body * 12) + Style.space(16)
+      height: Math.min(notesBody.implicitHeight, editor.notesRoom) + Style.space(16)
       radius: Style.cornerRadius
       color: Qt.rgba(editor.foreground.r, editor.foreground.g, editor.foreground.b, 0.06)
       border.width: Style.spacing.hairline
