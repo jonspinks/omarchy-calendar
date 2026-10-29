@@ -462,7 +462,10 @@ Item {
 
     Flickable {
       id: sheetScroll
-      anchors.fill: parent
+      anchors.top: parent.top
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: sheetFooter.top
       anchors.margins: Style.space(14)
       contentHeight: sheetEditor.implicitHeight
       clip: true
@@ -475,6 +478,7 @@ Item {
         width: parent.width
         height: implicitHeight
         fitHeight: sheetScroll.height
+        footerHost: sheetFooter
         draft: layout.p && layout.p.modern ? layout.p.draft : null
         event: layout.p ? layout.p.draftEvent : null
         calendars: layout.p ? layout.p.editableCalendars : []
@@ -491,6 +495,16 @@ Item {
         onRespond: function(answer, series) { layout.p.respondFromEditor(answer, series) }
         onOpenLink: function(url) { layout.p.openUrl(url) }
       }
+    }
+
+    // The editor's button row, pinned to the bottom of the sheet.
+    Item {
+      id: sheetFooter
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      anchors.margins: Style.space(14)
+      height: children.length > 0 ? children[0].height : 0
     }
   }
 }

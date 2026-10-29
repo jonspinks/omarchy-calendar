@@ -72,6 +72,8 @@ Item {
   readonly property bool hasGuests: guestRows.length > 0 || (!!event && event.guestsHidden)
 
   implicitHeight: form.implicitHeight
+  // Where the Delete/Open/Join/Close row goes instead of the form's end.
+  property Item footerHost: null
   // The height the editor may fill (the sheet sets it); 0 for no limit.
   property real fitHeight: 0
   // How tall the notes text may be: what fitHeight leaves after the rest of
@@ -628,8 +630,11 @@ Item {
     }
 
     // As tall as the taller side: an invitation has only a plain Close on the
-    // right, shorter than the boxed Join on the left.
+    // right, shorter than the boxed Join on the left. The sheet can hold it
+    // in footerHost, pinned below the scrolling form, so Join stays in view.
     Item {
+      id: footer
+      parent: editor.footerHost ? editor.footerHost : form
       width: parent.width
       height: Math.max(links.height, actions.height)
 
