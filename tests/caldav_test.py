@@ -374,6 +374,21 @@ class Syncing(unittest.TestCase):
         self.assertEqual(set(e) - {"alsoIn", "href", "recurrenceId"}, set(_google_shape()))
         self.assertTrue(os.path.exists(os.path.join(self.dir, "events.json")))
 
+    def test_signin_hint_names_the_service(self):
+        cmd = lambda **a: caldav.auth.signin_command(dict({"name": "N", "provider": "caldav"}, **a))
+        self.assertEqual(cmd(url="https://caldav.fastmail.com/dav/calendars/user/me@fastmail.com/", user="me@fastmail.com"),
+                         "add-fastmail N me@fastmail.com")
+        self.assertEqual(cmd(url="https://p42-caldav.icloud.com/1234/calendars/", user="me@icloud.com"),
+                         "add-icloud N me@icloud.com")
+        self.assertEqual(cmd(url="https://dav.example.com/cal/", user="me"),
+                         "add-caldav N --url https://dav.example.com/cal/ --user me")
+        self.assertEqual(cmd(url="https://notfastmail.com/", user="me"),
+                         "add-caldav N --url https://notfastmail.com/ --user me")
+        self.assertEqual(caldav.auth.signin_command({"name": "W", "provider": "microsoft"}), "add-microsoft W …")
+        with mock.patch.object(sync, "window_now", return_value=("2026-09-28", WINDOW)):
+            out = sync.publish([self.account], {"F": self.run_sync("c1", [MEETING])})
+        self.assertTrue(out["accounts"][0]["signin"].startswith("add-caldav F "))
+
     def test_a_broken_event_is_skipped(self):
         bad = ["BEGIN:VEVENT\nUID:bad\nDTSTART:2026-10-03\nEND:VEVENT"]
         with mock.patch.object(caldav.ical, "warn") as warn:

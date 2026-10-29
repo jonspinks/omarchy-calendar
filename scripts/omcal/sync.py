@@ -138,7 +138,7 @@ def publish(accounts, states):
         st = states[a["name"]]
         out["accounts"].append({"name": a["name"], "provider": a["provider"], "email": a.get("email", ""),
                                 "status": st.get("status", "ok"), "error": st.get("error", ""),
-                                "lastSync": st.get("lastSync")})
+                                "lastSync": st.get("lastSync"), "signin": auth.signin_command(a)})
         # Every calendar the account has, shown or not, so the widget can offer
         # the same choice as calendar-ctl hide/show.
         for c in st.get("known", []):

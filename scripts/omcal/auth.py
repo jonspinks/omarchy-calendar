@@ -368,3 +368,21 @@ def add_caldav(name, url, user, what="the server"):
     save_account({"name": name, "provider": "caldav", "url": url, "user": user,
                   "email": user if "@" in user else ""})
     print("Added %s (%s): %d calendar%s." % (name, user, len(found), "" if len(found) == 1 else "s"))
+
+
+def signin_command(a):
+    """The calendar-ctl command that signs an account in again, for the widget.
+
+    CalDAV accounts are told apart by their server, since Fastmail, iCloud
+    and the rest are all provider "caldav".
+    """
+    name, prov = a["name"], a["provider"]
+    if prov != "caldav":
+        return "add-%s %s …" % ("google" if prov == "google" else "microsoft", name)
+    host = (urllib.parse.urlsplit(a.get("url", "")).hostname or "").lower()
+    user = a.get("user") or a.get("email", "")
+    if host == "fastmail.com" or host.endswith(".fastmail.com"):
+        return "add-fastmail %s %s" % (name, user)
+    if host == "icloud.com" or host.endswith(".icloud.com"):
+        return "add-icloud %s %s" % (name, user)
+    return "add-caldav %s --url %s --user %s" % (name, a.get("url", ""), user)
