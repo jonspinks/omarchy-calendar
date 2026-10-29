@@ -31,6 +31,7 @@ class DeltaExpired(Exception):
     """Graph no longer honours this deltaLink (HTTP 410): start a new delta."""
 
 
+@files.within_deadline
 def _get(url, tok, prefer="odata.maxpagesize=100"):
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok, "Prefer": prefer})
     try:

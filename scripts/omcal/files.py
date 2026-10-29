@@ -14,13 +14,21 @@ Nothing here trusts a path to be what its name says:
 - The lockfile is opened without truncating (O_RDWR | O_CREAT, never O_TRUNC)
   and without following a link, and must be a regular file owned by us.
 - Provider replies are read to a byte cap, within an overall deadline, before
-  any JSON parsing.
+  any JSON parsing. The deadline holds however slowly a server trickles
+  bytes: each read takes what has arrived (read1, never a buffered read of N
+  bytes, which waits for all N), and the socket waits no longer than the time
+  left. Every request also runs under within_deadline, which covers the
+  connection and the headers too (HANCORE, marketplace #13263: a trickling
+  CalDAV server held the sync lock).
 """
 
+import functools
 import json
 import os
+import signal
 import stat
 import tempfile
+import threading
 import time
 
 # Our own files are small: an account list, calendar choices, a few months of
@@ -111,20 +119,82 @@ def open_lock(path):
     return os.fdopen(fd, "r+b", buffering=0)
 
 
-def read_reply(resp, limit=MAX_REPLY, deadline=REPLY_DEADLINE):
-    """A provider's reply body, capped in size and in total time."""
+def _socket(resp):
+    """The socket under an http.client reply, or under an HTTPError wrapping one."""
+    fp = resp
+    for _ in range(5):
+        sock = getattr(fp, "_sock", None)
+        if sock is not None:
+            return sock
+        fp = getattr(fp, "raw", None) or getattr(fp, "fp", None)
+        if fp is None:
+            return None
+    return None
+
+
+def read_reply(resp, limit=MAX_REPLY, deadline=REPLY_DEADLINE, cut=False):
+    """A provider's reply body, capped in size and in total time.
+
+    Past the cap it raises, or with cut=True returns the first `limit` bytes
+    (the start of an error reply, for a message).
+    """
     end = time.monotonic() + deadline
+    sock = _socket(resp)
+    idle = sock.gettimeout() if sock is not None else None
+    read = getattr(resp, "read1", None) or resp.read
     chunks, size = [], 0
-    while True:
-        if time.monotonic() > end:
-            raise ReplyTooLarge("the reply took longer than %d s" % deadline)
-        chunk = resp.read(min(65536, limit + 1 - size))
-        if not chunk:
-            return b"".join(chunks)
-        size += len(chunk)
-        if size > limit:
-            raise ReplyTooLarge("the reply was larger than %d bytes" % limit)
-        chunks.append(chunk)
+    try:
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                raise ReplyTooLarge("the reply took longer than %d s" % deadline)
+            if sock is not None:
+                sock.settimeout(left if idle is None else min(idle, left))
+            try:
+                chunk = read(min(65536, limit + 1 - size))
+            except TimeoutError:
+                if time.monotonic() >= end:
+                    raise ReplyTooLarge("the reply took longer than %d s" % deadline)
+                raise
+            if not chunk:
+                return b"".join(chunks)
+            size += len(chunk)
+            if size > limit:
+                if cut:
+                    return b"".join(chunks + [chunk])[:limit]
+                raise ReplyTooLarge("the reply was larger than %d bytes" % limit)
+            chunks.append(chunk)
+    finally:
+        if sock is not None:
+            try:
+                sock.settimeout(idle)
+            except OSError:
+                pass
+
+
+def within_deadline(fn, seconds=REPLY_DEADLINE):
+    """Run a request (connect, headers and body) within `seconds`, or raise.
+
+    A timer signal, so only on the main thread (where the sync and every
+    calendar-ctl command run); elsewhere, and inside a request already timed,
+    read_reply's own deadline still bounds the body.
+    """
+    @functools.wraps(fn)
+    def timed(*args, **kwargs):
+        if threading.current_thread() is not threading.main_thread() or signal.getitimer(signal.ITIMER_REAL)[0]:
+            return fn(*args, **kwargs)
+
+        def expire(signum, frame):
+            raise ReplyTooLarge("the request took longer than %d s" % seconds)
+
+        old = signal.signal(signal.SIGALRM, expire)
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old)
+    return timed
 
 
 def reply_json(resp, limit=MAX_REPLY):

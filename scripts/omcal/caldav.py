@@ -101,6 +101,7 @@ class Session:
     def __repr__(self):   # never the password, in a traceback or a log
         return "Session(%r, %r)" % (self.url, self.user)
 
+    @files.within_deadline
     def send(self, method, url, body=None, headers=None):
         """One request: (status, {lower-case header: value}, reply bytes).
 

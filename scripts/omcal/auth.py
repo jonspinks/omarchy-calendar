@@ -119,6 +119,7 @@ def save_account(entry):
     save_accounts(accounts)
 
 
+@files.within_deadline
 def post_form(url, fields):
     req = urllib.request.Request(url, data=urllib.parse.urlencode(fields).encode(),
                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -133,6 +134,7 @@ def post_form(url, fields):
             raise HttpError(urllib.parse.urlsplit(url).netloc, e.code)
 
 
+@files.within_deadline
 def get_json(url, token):
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
     try:
@@ -146,6 +148,7 @@ class Conflict(RuntimeError):
     """The event changed elsewhere since it was read (HTTP 412): nothing was written."""
 
 
+@files.within_deadline
 def send_json(method, url, token, body=None, headers=None):
     """A write to an API. Returns the reply's JSON, or None for an empty reply."""
     h = {"Authorization": "Bearer " + token}
@@ -167,7 +170,7 @@ def send_json(method, url, token, body=None, headers=None):
 def error_text(e):
     """The start of an error reply, for the message: read no more than that."""
     try:
-        return e.read(4096).decode(errors="replace")[:300]
+        return files.read_reply(e, limit=4096, cut=True).decode(errors="replace")[:300]
     except Exception:
         return ""
 
