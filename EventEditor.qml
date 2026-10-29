@@ -323,31 +323,75 @@ Item {
 
     // Shown when the entry has notes. Width is the form's own width: a nested
     // column, or a text height tied to contentHeight, laid out as nothing.
-    Caption {
+    // The text can be selected and copied, and https links open in the
+    // browser. Long notes (a Teams footer) scroll inside the box, so the
+    // buttons below stay on screen.
+    Row {
       visible: editor.notesText !== ""
-      text: "NOTES"
+      spacing: Style.space(10)
+      Caption { text: "NOTES" }
+      Caption {
+        id: copyNotes
+        property bool copied: false
+        text: copied ? "COPIED" : "COPY"
+        color: copyMouse.containsMouse ? editor.foreground : Qt.darker(editor.foreground, 1.5)
+        MouseArea {
+          id: copyMouse
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: {
+            notesBody.selectAll()
+            notesBody.copy()
+            notesBody.deselect()
+            copyNotes.copied = true
+            copiedTimer.restart()
+          }
+        }
+        Timer { id: copiedTimer; interval: 1500; onTriggered: copyNotes.copied = false }
+      }
     }
     Rectangle {
       id: notesBox
       visible: editor.notesText !== ""
       width: form.width
-      height: notesBody.implicitHeight + Style.space(16)
+      height: Math.min(notesBody.implicitHeight, Style.font.body * 12) + Style.space(16)
       radius: Style.cornerRadius
       color: Qt.rgba(editor.foreground.r, editor.foreground.g, editor.foreground.b, 0.06)
       border.width: Style.spacing.hairline
       border.color: Qt.rgba(editor.foreground.r, editor.foreground.g, editor.foreground.b, 0.25)
 
-      Text {
-        id: notesBody
+      Flickable {
+        id: notesScroll
         x: Style.space(8)
         y: Style.space(8)
         width: notesBox.width - Style.space(16)
-        wrapMode: Text.WordWrap
-        textFormat: Text.PlainText
-        text: editor.notesText
-        color: editor.foreground
-        font.family: editor.fontFamily
-        font.pixelSize: Style.font.body
+        height: notesBox.height - Style.space(16)
+        contentHeight: notesBody.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        // The wheel scrolls; a drag selects text instead of scrolling.
+        acceptedButtons: Qt.NoButton
+
+        TextEdit {
+          id: notesBody
+          width: notesScroll.width
+          readOnly: true
+          selectByMouse: true
+          wrapMode: TextEdit.Wrap
+          textFormat: TextEdit.RichText
+          text: Model.notesHtml(editor.notesText, String(editor.themeAccent))
+          color: editor.foreground
+          selectionColor: Qt.rgba(editor.themeAccent.r, editor.themeAccent.g, editor.themeAccent.b, 0.4)
+          selectedTextColor: editor.foreground
+          font.family: editor.fontFamily
+          font.pixelSize: Style.font.body
+          onLinkActivated: function(link) { editor.openLink(link) }
+
+          HoverHandler {
+            cursorShape: notesBody.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.IBeamCursor
+          }
+        }
       }
     }
 

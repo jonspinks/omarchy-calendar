@@ -6,7 +6,7 @@ const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
-  " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, VIEWS }")()
+  " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, VIEWS }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -153,6 +153,14 @@ const idx = M.indexEvents({
 }, true)
 eq(idx.byDay["2026-10-02"].map(function(r) { return [r.account, r.editable, "answerable" in r] }).sort(),
    [["F", true, false], ["G", true, false]], "indexEvents: caldav events edit like the others")
+
+// Notes: links clickable, everything else escaped.
+eq(M.notesHtml("Join:\nhttps://teams.microsoft.com/meet/1?p=a&b=c.\n<https://aka.ms/x> <b>", "#abc"),
+   'Join:<br><a href="https://teams.microsoft.com/meet/1?p=a&amp;b=c" style="color:#abc">https://teams.microsoft.com/meet/1?p=a&amp;b=c</a>.<br>' +
+   '&lt;<a href="https://aka.ms/x" style="color:#abc">https://aka.ms/x</a>&gt; &lt;b&gt;', "notesHtml: links, escapes, line breaks")
+eq(M.notesHtml('http://plain.example "https://" javascript:alert(1)', "#abc"),
+   'http://plain.example &quot;https://&quot; javascript:alert(1)', "notesHtml: only https becomes a link")
+eq(M.notesHtml("____________\nTeams\nsnake_case_name", "#abc"), "<hr><br>Teams<br>snake_case_name", "notesHtml: an underscore line is a rule")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

@@ -947,3 +947,23 @@ if (typeof module !== "undefined") {
     guestSummary: guestSummary
   }
 }
+
+// Meeting notes as rich text for the editor: escaped, line breaks kept, and
+// every https:// address a link (the panel opens only https). Punctuation
+// that ends a sentence, or the <> Outlook wraps an address in, stays outside.
+function notesHtml(text, linkColor) {
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+  }
+  var src = String(text || ""), out = "", last = 0, re = /https:\/\/[^\s<>"]+/g, m
+  while ((m = re.exec(src)) !== null) {
+    var url = m[0].replace(/[.,;:!?)\]}'*]+$/, "")
+    if (url.length <= 8) continue
+    out += esc(src.slice(last, m.index)) + '<a href="' + esc(url) + '" style="color:' + linkColor + '">' + esc(url) + "</a>"
+    last = m.index + url.length
+    re.lastIndex = last
+  }
+  out += esc(src.slice(last))
+  // A line drawn in underscores (Teams pads its footer with 80) is a rule.
+  return out.replace(/(^|\n)_{10,}(?=\n|$)/g, "$1<hr>").replace(/\n/g, "<br>")
+}
