@@ -466,6 +466,8 @@ Item {
       contentHeight: sheetEditor.implicitHeight
       clip: true
       boundsBehavior: Flickable.StopAtBounds
+      // The wheel scrolls the sheet; a drag selects text in the notes.
+      acceptedButtons: Qt.NoButton
 
       EventEditor {
         id: sheetEditor
