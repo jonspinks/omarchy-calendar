@@ -160,7 +160,9 @@ eq(M.notesHtml("Join:\nhttps://teams.microsoft.com/meet/1?p=a&b=c.\n<https://aka
    '&lt;<a href="https://aka.ms/x" style="color:#abc">https://aka.ms/x</a>&gt; &lt;b&gt;', "notesHtml: links, escapes, line breaks")
 eq(M.notesHtml('http://plain.example "https://" javascript:alert(1)', "#abc"),
    'http://plain.example &quot;https://&quot; javascript:alert(1)', "notesHtml: only https becomes a link")
-eq(M.notesHtml("____________\nTeams\nsnake_case_name", "#abc"), "<hr><br>Teams<br>snake_case_name", "notesHtml: an underscore line is a rule")
+eq(M.notesHtml("____________\n\n\nTeams\nsnake_case_name\n\n____________\n", "#abc"), "<hr>Teams<br>snake_case_name<hr>",
+   "notesHtml: an underscore line is a rule, without the blank lines around it")
+eq(M.notesHtml("Agenda\n\nItem one", "#abc"), "Agenda<br><br>Item one", "notesHtml: other blank lines stay")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

@@ -964,6 +964,8 @@ function notesHtml(text, linkColor) {
     re.lastIndex = last
   }
   out += esc(src.slice(last))
-  // A line drawn in underscores (Teams pads its footer with 80) is a rule.
-  return out.replace(/(^|\n)_{10,}(?=\n|$)/g, "$1<hr>").replace(/\n/g, "<br>")
+  // A line drawn in underscores (Teams pads its footer with 80) is a rule,
+  // and the blank lines around it go: the rule has its own space.
+  return out.replace(/(^|\n)_{10,}[ \t]*(?=\n|$)/g, "$1\u0000")
+            .replace(/[ \t\n]*\u0000[ \t\n]*/g, "<hr>").replace(/\n/g, "<br>")
 }
