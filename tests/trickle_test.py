@@ -57,6 +57,18 @@ class TrickleTest(unittest.TestCase):
                 files.read_reply(r, deadline=1)
             self.assertLess(time.monotonic() - start, 2.5)
 
+    def test_a_whole_reply_is_read_after_its_socket_closes(self):
+        # http.client closes the socket once Content-Length is in; the next
+        # pass must see the end, not a closed socket (EBADF from Graph).
+        self.srv, url = serve(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello", b"")
+        with urllib.request.urlopen(url, timeout=30) as r:
+            self.assertEqual(files.read_reply(r), b"hello")
+        self.srv2, url = serve(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nhel", b"lo!", gap=0.01)
+        with urllib.request.urlopen(url, timeout=30) as r:
+            self.assertEqual(files.read_reply(r), b"hello!")
+        self.srv2.shutdown()
+        self.srv2.server_close()
+
     def test_trickled_headers_stop_at_the_deadline(self):
         self.srv, url = serve(b"HTTP/1.1 200 OK\r\n", b"X-Slow: " + b"y" * 2000)
         get = files.within_deadline(lambda: urllib.request.urlopen(url, timeout=30).read(), seconds=1)

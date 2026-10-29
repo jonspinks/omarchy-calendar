@@ -150,7 +150,12 @@ def read_reply(resp, limit=MAX_REPLY, deadline=REPLY_DEADLINE, cut=False):
             if left <= 0:
                 raise ReplyTooLarge("the reply took longer than %d s" % deadline)
             if sock is not None:
-                sock.settimeout(left if idle is None else min(idle, left))
+                try:
+                    sock.settimeout(left if idle is None else min(idle, left))
+                except OSError:
+                    # http.client closes the socket once the whole body is
+                    # in; what's left comes from its buffer, or nothing.
+                    sock = None
             try:
                 chunk = read(min(65536, limit + 1 - size))
             except TimeoutError:
