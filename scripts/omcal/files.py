@@ -22,6 +22,7 @@ Nothing here trusts a path to be what its name says:
   CalDAV server held the sync lock).
 """
 
+import contextlib
 import functools
 import json
 import os
@@ -172,28 +173,36 @@ def read_reply(resp, limit=MAX_REPLY, deadline=REPLY_DEADLINE, cut=False):
                 pass
 
 
-def within_deadline(fn, seconds=REPLY_DEADLINE):
-    """Run a request (connect, headers and body) within `seconds`, or raise.
+@contextlib.contextmanager
+def deadline(seconds):
+    """Raise ReplyTooLarge in the block once `seconds` have passed.
 
     A timer signal, so only on the main thread (where the sync and every
-    calendar-ctl command run); elsewhere, and inside a request already timed,
-    read_reply's own deadline still bounds the body.
+    calendar-ctl command run). Inside a block already timed it adds nothing:
+    the outer deadline holds, and read_reply's own still bounds each body.
     """
+    if threading.current_thread() is not threading.main_thread() or signal.getitimer(signal.ITIMER_REAL)[0]:
+        yield
+        return
+
+    def expire(signum, frame):
+        raise ReplyTooLarge("took longer than %d s" % seconds)
+
+    old = signal.signal(signal.SIGALRM, expire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+
+
+def within_deadline(fn, seconds=REPLY_DEADLINE):
+    """A request function run within `seconds`: connect, headers and body."""
     @functools.wraps(fn)
     def timed(*args, **kwargs):
-        if threading.current_thread() is not threading.main_thread() or signal.getitimer(signal.ITIMER_REAL)[0]:
+        with deadline(seconds):
             return fn(*args, **kwargs)
-
-        def expire(signum, frame):
-            raise ReplyTooLarge("the request took longer than %d s" % seconds)
-
-        old = signal.signal(signal.SIGALRM, expire)
-        signal.setitimer(signal.ITIMER_REAL, seconds)
-        try:
-            return fn(*args, **kwargs)
-        finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, old)
     return timed
 
 

@@ -33,6 +33,7 @@ CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cac
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or CACHE
 DAYS_BACK, DAYS_AHEAD = 35, 120
 GOOGLE_FULL_EVERY = 6 * 3600
+ACCOUNT_DEADLINE = 300  # seconds for one account's whole sync
 
 
 # The private write, read and lock helpers live in files.py (see there).
@@ -56,52 +57,55 @@ def sync_account(a, full, log):
     now = time.time()
     status, error = "ok", ""
     try:
-        if a["provider"] == "google":
-            tok, prov = auth.google_access(a), google
-        elif a["provider"] == "caldav":
-            tok, prov = caldav.login(a), caldav
-        else:
-            tok, prov = auth.ms_access(a), graph
-        # Hidden calendars are not fetched at all; their cached events go too,
-        # so a shown-again calendar starts with a full fetch.
-        hidden = auth.hidden_calendars().get(a["name"], set())
-        listed = prov.calendars(tok)
-        st["known"] = [dict(c, shown=c["id"] not in hidden) for c in listed]
-        cals = [c for c in listed if c["id"] not in hidden]
-        keep = {c["id"] for c in cals}
-        # A calendar that was removed or hidden takes its events with it.
-        for cid in list(st["calendars"]):
-            if cid not in keep:
-                del st["calendars"][cid]
-        st["events"] = {u: e for u, e in st["events"].items() if e["calendar"] in keep}
-        for cal in cals:
-            prev = st["calendars"].get(cal["id"], {})
-            cursor = prev.get("cursor")
-            if prov is caldav and cursor != caldav.cursor(cal):
-                # The calendar changed since it was fetched: a moved ctag is as
-                # good as no cursor, and the whole calendar is read again.
-                cursor = None
-            stale = a["provider"] == "google" and now - prev.get("fullAt", 0) > GOOGLE_FULL_EVERY
-            whole = full or moved or not cursor or stale
-            try:
-                events, removed, cursor = _fetch(a, prov, tok, cal, window, None if whole else cursor)
-            except (graph.DeltaExpired, auth.HttpError) as e:
-                if whole or (isinstance(e, auth.HttpError) and e.code != 410):
-                    raise
-                whole = True
-                events, removed, cursor = _fetch(a, prov, tok, cal, window, None)
-            if whole:
-                st["events"] = {u: e for u, e in st["events"].items() if e["calendar"] != cal["id"]}
-            for u in removed:
-                st["events"].pop(u, None)
-            for e in events:
-                st["events"][e["uid"]] = with_notes(e, st["events"].get(e["uid"]))
-            st["calendars"][cal["id"]] = dict(cal, cursor=cursor,
-                                              fullAt=now if whole else prev.get("fullAt", now))
-            log("  %s / %s: %s, %d changed, %d removed" % (a["name"], cal["name"] or cal["id"],
-                "full" if whole else "delta", len(events), len(removed)))
-        st["windowDay"], st["window"] = day, window
-        st["lastSync"] = now
+        # One account can hold the sync (and its lock) only so long: past
+        # it, the account is offline this time and the others still sync.
+        with files.deadline(ACCOUNT_DEADLINE):
+            if a["provider"] == "google":
+                tok, prov = auth.google_access(a), google
+            elif a["provider"] == "caldav":
+                tok, prov = caldav.login(a), caldav
+            else:
+                tok, prov = auth.ms_access(a), graph
+            # Hidden calendars are not fetched at all; their cached events go too,
+            # so a shown-again calendar starts with a full fetch.
+            hidden = auth.hidden_calendars().get(a["name"], set())
+            listed = prov.calendars(tok)
+            st["known"] = [dict(c, shown=c["id"] not in hidden) for c in listed]
+            cals = [c for c in listed if c["id"] not in hidden]
+            keep = {c["id"] for c in cals}
+            # A calendar that was removed or hidden takes its events with it.
+            for cid in list(st["calendars"]):
+                if cid not in keep:
+                    del st["calendars"][cid]
+            st["events"] = {u: e for u, e in st["events"].items() if e["calendar"] in keep}
+            for cal in cals:
+                prev = st["calendars"].get(cal["id"], {})
+                cursor = prev.get("cursor")
+                if prov is caldav and cursor != caldav.cursor(cal):
+                    # The calendar changed since it was fetched: a moved ctag is as
+                    # good as no cursor, and the whole calendar is read again.
+                    cursor = None
+                stale = a["provider"] == "google" and now - prev.get("fullAt", 0) > GOOGLE_FULL_EVERY
+                whole = full or moved or not cursor or stale
+                try:
+                    events, removed, cursor = _fetch(a, prov, tok, cal, window, None if whole else cursor)
+                except (graph.DeltaExpired, auth.HttpError) as e:
+                    if whole or (isinstance(e, auth.HttpError) and e.code != 410):
+                        raise
+                    whole = True
+                    events, removed, cursor = _fetch(a, prov, tok, cal, window, None)
+                if whole:
+                    st["events"] = {u: e for u, e in st["events"].items() if e["calendar"] != cal["id"]}
+                for u in removed:
+                    st["events"].pop(u, None)
+                for e in events:
+                    st["events"][e["uid"]] = with_notes(e, st["events"].get(e["uid"]))
+                st["calendars"][cal["id"]] = dict(cal, cursor=cursor,
+                                                  fullAt=now if whole else prev.get("fullAt", now))
+                log("  %s / %s: %s, %d changed, %d removed" % (a["name"], cal["name"] or cal["id"],
+                    "full" if whole else "delta", len(events), len(removed)))
+            st["windowDay"], st["window"] = day, window
+            st["lastSync"] = now
     except auth.AuthError as e:
         status, error = "signin", str(e)
     except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:

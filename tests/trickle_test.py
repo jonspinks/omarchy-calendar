@@ -13,9 +13,10 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-from omcal import auth, files  # noqa: E402
+from omcal import auth, caldav, files, sync  # noqa: E402
 
 
 class Trickle(socketserver.BaseRequestHandler):
@@ -79,6 +80,20 @@ class TrickleTest(unittest.TestCase):
             self.assertIsNotNone(sock)
             self.assertEqual(files.read_reply(r, limit=3, cut=True), b"abc")
             self.assertEqual(sock.gettimeout(), 30)
+
+
+class AccountDeadlineTest(unittest.TestCase):
+    def test_a_stalled_account_is_offline_and_the_sync_goes_on(self):
+        stall = lambda *_: time.sleep(10)
+        account = {"name": "Slow", "provider": "caldav", "url": "https://dav.example.com/", "user": "me"}
+        with mock.patch.object(sync, "ACCOUNT_DEADLINE", 1), \
+                mock.patch.object(caldav, "login", return_value=None), \
+                mock.patch.object(caldav, "calendars", side_effect=stall), \
+                mock.patch.object(auth, "hidden_calendars", return_value={}):
+            start = time.monotonic()
+            st = sync.sync_account(account, False, lambda *_: None)
+        self.assertLess(time.monotonic() - start, 2.5)
+        self.assertEqual(st["status"], "offline")
 
 
 if __name__ == "__main__":
