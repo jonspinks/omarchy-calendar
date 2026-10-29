@@ -6,7 +6,7 @@ const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
-  " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, VIEWS }")()
+  " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes, VIEWS }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -163,6 +163,9 @@ eq(M.notesHtml('http://plain.example "https://" javascript:alert(1)', "#abc"),
 eq(M.notesHtml("____________\n\n\nTeams\nsnake_case_name\n\n____________\n", "#abc"), "<hr>Teams<br>snake_case_name<hr>",
    "notesHtml: an underscore line is a rule, without the blank lines around it")
 eq(M.notesHtml("Agenda\n\nItem one", "#abc"), "Agenda<br><br>Item one", "notesHtml: other blank lines stay")
+
+eq([M.meetingNotes("____\n\n____"), M.meetingNotes("  \n"), M.meetingNotes(null), M.meetingNotes("\n____\nHi\n")],
+   ["", "", "", "____\nHi"], "meetingNotes: only divider lines is no notes")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

@@ -38,10 +38,11 @@ Item {
 
   readonly property bool creating: !!draft && draft.mode === "create"
   readonly property bool editable: creating || (!!event && event.editable)
-  // The calendar entry's notes. Empty when the event has none, so the field stays hidden.
+  // The calendar entry's notes. Empty when the event has none (or only
+  // divider lines), so the field stays hidden.
   readonly property string notesText: {
     var row = editor.event
-    return (row && row.notes ? String(row.notes) : "").trim()
+    return Model.meetingNotes(row ? row.notes : "")
   }
   readonly property bool invitation: !!event && !event.organizer
   readonly property bool removable: !!event && (event.editable || event.calendarEditable)

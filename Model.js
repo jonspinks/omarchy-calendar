@@ -948,6 +948,13 @@ if (typeof module !== "undefined") {
   }
 }
 
+// The notes to show, trimmed; "" when there is nothing but divider lines
+// (an invitation whose Teams block came through empty), so none are shown.
+function meetingNotes(text) {
+  var t = String(text || "").trim()
+  return /^[_\s]*$/.test(t) ? "" : t
+}
+
 // Meeting notes as rich text for the editor: escaped, line breaks kept, and
 // every https:// address a link (the panel opens only https). Punctuation
 // that ends a sentence, or the <> Outlook wraps an address in, stays outside.
