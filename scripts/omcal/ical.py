@@ -13,6 +13,7 @@ know (Outlook's "Central Standard Time", or a made-up one) falls back to this
 machine's own zone: right for most invitations you'd see, and never a crash.
 """
 
+import os
 import re
 import sys
 from datetime import date, datetime, timedelta, timezone
@@ -137,6 +138,32 @@ def _in_zone(stack):
 
 # ------------------------------------------------------------------ times
 
+def _local_zone():
+    """This machine's zone, including the daylight-saving rules for a date.
+
+    datetime.now().astimezone().tzinfo is a fixed offset of today on this
+    Python, so an October event read in November would be an hour out.
+    """
+    current = datetime.now().astimezone().tzinfo
+    key = getattr(current, "key", None)
+    if key:
+        try:
+            return ZoneInfo(key)
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    name = os.environ.get("TZ") or ""
+    if name and name != "localtime":
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    try:
+        name = os.path.realpath("/etc/localtime").split("/zoneinfo/", 1)[1]
+        return ZoneInfo(name)
+    except (IndexError, OSError, ZoneInfoNotFoundError, ValueError):
+        return current
+
+
 def zone(tzid):
     """A TZID as a tzinfo; this machine's zone when zoneinfo doesn't know it."""
     if tzid:
@@ -147,7 +174,7 @@ def zone(tzid):
                 return ZoneInfo("/".join(parts[k:]))
             except (ZoneInfoNotFoundError, ValueError):
                 continue
-    return datetime.now().astimezone().tzinfo
+    return _local_zone()
 
 
 def parse_time(text, tzid=None, is_date=False):
