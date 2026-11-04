@@ -29,6 +29,10 @@ class JoinLinks(unittest.TestCase):
         self.assertIsNone(find_join("http://teams.microsoft.com/l/meetup-join/x"))
         self.assertIsNone(find_join("https://evil.example/zoom.us/j/1"))
 
+    def test_proton_meet_keeps_the_password(self):
+        self.assertEqual(find_join("https://meet.proton.me/join/id-ABC123#pwd-s3cret"),
+                         {"url": "https://meet.proton.me/join/id-ABC123#pwd-s3cret", "kind": "proton"})
+
 
 CAL = {"id": "c", "editable": True, "defaultRemind": []}
 

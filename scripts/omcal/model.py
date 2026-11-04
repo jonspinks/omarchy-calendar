@@ -12,7 +12,7 @@ A normalised event:
     location     free text, or ""
     notes        the invitation body as plain text, or "". Absent on a Graph
                  delta item that did not carry the body: the previous notes stay.
-    join         {"url", "kind"} with kind teams | zoom | meet | webex | other,
+    join         {"url", "kind"} with kind teams | zoom | meet | webex | proton | other,
                  or None
     response     accepted | tentative | declined | needsAction | organizer | none
     organizer    True when the account owns the event
@@ -57,6 +57,7 @@ JOIN_PATTERNS = [
     ("zoom", re.compile(r"https://(?:[\w-]+\.)?zoom\.us/(?:j|my|w|s)/[^\s\"'<>]+", re.I)),
     ("meet", re.compile(r"https://meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:\?[^\s\"'<>]*)?", re.I)),
     ("webex", re.compile(r"https://[\w-]+\.webex\.com/[^\s\"'<>]+", re.I)),
+    ("proton", re.compile(r"https://meet\.proton\.me/join/[^\s\"'<>]+", re.I)),
 ]
 
 TAGS = re.compile(r"<[^>]+>")

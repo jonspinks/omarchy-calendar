@@ -44,8 +44,8 @@ get the invitation or the cancellation when you save.
 ![An invitation, answered from the calendar](screenshots/3-invitation.png)
 
 **Reminders you can join from.** A few minutes before a meeting, a
-notification pops up. Click it and you're in the Teams, Zoom, Meet or Webex
-call. Busy? Snooze it for five minutes from the calendar.
+notification pops up. Click it and you're in the Teams, Zoom, Meet, Webex
+or Proton Meet call. Busy? Snooze it for five minutes from the calendar.
 
 ![A reminder: click it to join](screenshots/5-reminder.png)
 

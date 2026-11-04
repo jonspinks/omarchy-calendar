@@ -1515,7 +1515,7 @@ Panel {
                     iconText: "󰕧"
                     text: "Join"
                     tooltipText: eventRow.modelData.join
-                      ? "Join the " + ({teams: "Teams", zoom: "Zoom", meet: "Meet", webex: "Webex"}[eventRow.modelData.join.kind] || "online") + " meeting"
+                      ? "Join the " + ({teams: "Teams", zoom: "Zoom", meet: "Meet", webex: "Webex", proton: "Proton Meet"}[eventRow.modelData.join.kind] || "online") + " meeting"
                       : ""
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily

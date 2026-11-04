@@ -656,7 +656,7 @@ function reminderText(r, calName, use24h) {
            : "started " + (-r.minutes) + " min ago"
   if (String(r.id).indexOf("snooze:") === 0) when = "snoozed · " + when
   var time = e.allDay ? "All day" : clockLabel(new Date(e.start), use24h) + " – " + clockLabel(new Date(e.end), use24h)
-  var how = e.join ? " · click to join " + ({teams: "Teams", zoom: "Zoom", meet: "Meet", webex: "Webex"}[e.join.kind] || "the meeting")
+  var how = e.join ? " · click to join " + ({teams: "Teams", zoom: "Zoom", meet: "Meet", webex: "Webex", proton: "Proton Meet"}[e.join.kind] || "the meeting")
                    : (e.webLink ? " · click to open" : "")
   return { headline: e.title, body: when + " · " + time + " · " + calName + how }
 }
