@@ -23,6 +23,7 @@ Item {
   signal openEvent(var ev)
   signal joinEvent(string url)
   signal pickDay(string key)
+  signal createAt(string dayKey, int minutes)
 
   // The all-day events a "+n more" click is naming. The strip keeps the
   // first two; this is the rest, in the day's own order.
@@ -299,6 +300,20 @@ Item {
     Item {
       width: scroller.width
       height: scroller.contentHeight
+
+      // Behind the events, so a click on one still opens it. A double-click
+      // on an empty hour starts an event then; a drag still scrolls.
+      MouseArea {
+        anchors.fill: parent
+        onDoubleClicked: function(mouse) {
+          if (mouse.x < grid.gutter || grid.colWidth <= 0) return
+          var col = Math.floor((mouse.x - grid.gutter) / grid.colWidth)
+          if (col < 0 || col >= grid.days.length) return
+          var minutes = Model.slotStart(mouse.y, grid.hourHeight, grid.hours.first, grid.hours.last)
+          if (minutes < 0) return
+          grid.createAt(grid.days[col], minutes)
+        }
+      }
 
       // Hour lines and labels.
       Repeater {

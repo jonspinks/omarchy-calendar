@@ -420,6 +420,7 @@ Item {
       onOpenEvent: function(ev) { layout.p.openEditor(ev) }
       onJoinEvent: function(url) { layout.p.openUrl(url) }
       onPickDay: function(key) { layout.p.openDay(key) }
+      onCreateAt: function(dayKey, minutes) { layout.p.newEvent(dayKey, minutes) }
     }
 
     YearView {

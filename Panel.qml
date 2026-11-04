@@ -296,10 +296,14 @@ Panel {
     }
   }
 
-  function newEvent() {
+  function newEvent(dayKey, minutes) {
     root.editorError = ""
     root.draftEvent = null
-    var d = Model.newDraft(root.selectedKey, new Date(), root.defaultCalendar())
+    if (dayKey) {
+      root.selectedKey = dayKey
+      root.showSelectedMonth()
+    }
+    var d = Model.newDraft(root.selectedKey, new Date(), root.defaultCalendar(), minutes)
     root.createBaseline = Model.draftSnapshot(d)
     root.draft = d
   }
@@ -1073,6 +1077,7 @@ Panel {
             onOpenEvent: function(ev) { root.openEditor(ev) }
             onJoinEvent: function(url) { root.openUrl(url) }
             onPickDay: function(key) { root.openDay(key) }
+            onCreateAt: function(dayKey, minutes) { root.newEvent(dayKey, minutes) }
           }
 
           // ---- The year.

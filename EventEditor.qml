@@ -72,6 +72,16 @@ Item {
   readonly property var guestList: !!event && event.guests ? event.guests : []
   readonly property var guestRows: Model.guestRows(guestList, invited, uninvited)
   readonly property bool hasGuests: guestRows.length > 0 || (!!event && event.guestsHidden)
+  // Names offered while an address is typed. People already on cached events;
+  // the list stays up for the click that picks one, which would otherwise
+  // take focus off the field and hide it first.
+  property bool suggestHeld: false
+  property string suggestTarget: ""
+  property bool inviteSuggestOpen: false
+  property bool guestSuggestOpen: false
+  readonly property var knownPeople: Model.knownGuests(byDay)
+  readonly property var invitePicks: Model.guestSuggestions(knownPeople, inviteField.text, [], 6)
+  readonly property var guestPicks: Model.guestSuggestions(knownPeople, guestField.text, guestTaken(), 6)
 
   implicitHeight: form.implicitHeight
   // Where the Delete/Open/Join/Close row goes instead of the form's end.
@@ -114,6 +124,10 @@ Item {
     editor.uninvited = draft.uninvited || []
     editor.showAllGuests = false
     editor.guestError = ""
+    editor.suggestHeld = false
+    editor.suggestTarget = ""
+    editor.inviteSuggestOpen = false
+    editor.guestSuggestOpen = false
     guestField.text = draft.guestText || ""
     notesField.text = draft.notes || ""
     Qt.callLater(function() {
@@ -184,6 +198,51 @@ Item {
     guestField.text = ""
   }
 
+  // Addresses already on this event, so they are not offered again.
+  function guestTaken() {
+    var out = [], drop = editor.uninvited || [], guests = editor.guestList || []
+    for (var i = 0; i < guests.length; i++) {
+      var email = String(guests[i].email || "").toLowerCase()
+      if (!email || drop.indexOf(email) >= 0) continue
+      out.push(email)
+    }
+    var added = editor.invited || []
+    for (var j = 0; j < added.length; j++) out.push(added[j])
+    return out
+  }
+
+  // Focus leaving the field is deferred: the click that picks a row takes
+  // focus before its press handler runs, and the row has to still be there.
+  function suggestFocus(which, focused) {
+    if (focused) {
+      if (which === "invite") editor.inviteSuggestOpen = true
+      else editor.guestSuggestOpen = true
+      return
+    }
+    Qt.callLater(function() {
+      if (which === "invite") {
+        if (!(editor.suggestHeld && editor.suggestTarget === "invite") && !inviteField.activeFocus)
+          editor.inviteSuggestOpen = false
+      } else if (!(editor.suggestHeld && editor.suggestTarget === "guest") && !guestField.activeFocus) {
+        editor.guestSuggestOpen = false
+      }
+    })
+  }
+
+  function pickInvite(email) {
+    inviteField.text = Model.applyGuestPick(inviteField.text, email)
+    inviteField.forceActiveFocus()
+    inviteField.cursorPosition = inviteField.text.length
+    editor.suggestHeld = false
+  }
+
+  function pickGuest(email) {
+    guestField.text = Model.applyGuestPick(guestField.text, email)
+    guestField.forceActiveFocus()
+    editor.suggestHeld = false
+    editor.addTypedGuests()
+  }
+
   function removeGuest(email) {
     var r = Model.guestRemove(editor.invited, editor.uninvited, email)
     editor.invited = r.invited
@@ -245,6 +304,73 @@ Item {
     foreground: editor.foreground
     font.family: editor.fontFamily
     Keys.onPressed: function(event) { editor.fieldKey(event) }
+  }
+
+  // People from other events matching the address being typed.
+  component SuggestList: Column {
+    id: suggestList
+    property string target: ""
+    property var picks: []
+    signal picked(string email)
+    width: parent.width
+    spacing: Style.space(2)
+
+    Repeater {
+      model: suggestList.picks
+
+      Rectangle {
+        id: suggestRow
+        required property var modelData
+        width: suggestList.width
+        height: suggestWho.implicitHeight + Style.space(8)
+        radius: Style.cornerRadius
+        color: suggestMouse.containsMouse
+               ? Style.hoverFillFor(editor.foreground, editor.themeAccent)
+               : Qt.rgba(editor.foreground.r, editor.foreground.g, editor.foreground.b, 0.06)
+
+        Column {
+          id: suggestWho
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.leftMargin: Style.space(8)
+          anchors.rightMargin: Style.space(8)
+
+          Text {
+            width: parent.width
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            text: suggestRow.modelData.name
+            color: editor.foreground
+            font.family: editor.fontFamily
+            font.pixelSize: Style.font.body
+          }
+          Text {
+            visible: text !== ""
+            width: parent.width
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            text: suggestRow.modelData.detail
+            color: Qt.darker(editor.foreground, 1.5)
+            font.family: editor.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
+
+        MouseArea {
+          id: suggestMouse
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onPressed: function(mouse) {
+            editor.suggestTarget = suggestList.target
+            editor.suggestHeld = true
+            suggestList.picked(suggestRow.modelData.email)
+            mouse.accepted = true
+          }
+        }
+      }
+    }
   }
 
   // Several lines, so Enter starts a new one instead of saving. Escape still
@@ -611,11 +737,19 @@ Item {
           readOnly: editor.saving
           foreground: editor.foreground
           font.family: editor.fontFamily
-          placeholderText: "Add guests: email addresses"
+          placeholderText: "Add guests: a name or an email"
           onTextChanged: editor.guestError = ""
+          onActiveFocusChanged: editor.suggestFocus("guest", activeFocus)
           Keys.onPressed: function(event) {
             if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
-              editor.addTypedGuests()
+              var frag = Model.guestQuery(text)
+              if (editor.guestSuggestOpen && editor.guestPicks.length && !Model.isEmail(frag)) {
+                editor.suggestTarget = "guest"
+                editor.suggestHeld = true
+                editor.pickGuest(editor.guestPicks[0].email)
+              } else {
+                editor.addTypedGuests()
+              }
               event.accepted = true
             } else {
               editor.fieldKey(event)
@@ -638,6 +772,13 @@ Item {
         }
       }
 
+      SuggestList {
+        target: "guest"
+        visible: editor.guestSuggestOpen && editor.guestPicks.length > 0
+        picks: editor.guestPicks
+        onPicked: function(email) { editor.pickGuest(email) }
+      }
+
       Text {
         visible: editor.guestError !== ""
         width: parent.width
@@ -650,11 +791,38 @@ Item {
       }
     }
 
-    Field {
+    // A plain TextField, not Field: Enter picks a suggested person when one
+    // is listed, and otherwise saves. Field's own Enter always saves.
+    TextField {
       id: inviteField
       visible: editor.creating
       width: parent.width
-      placeholderText: "Invite: email addresses, separated by commas"
+      readOnly: !editor.editable || editor.saving
+      foreground: editor.foreground
+      font.family: editor.fontFamily
+      placeholderText: "Invite: a name or an email, separated by commas"
+      onActiveFocusChanged: editor.suggestFocus("invite", activeFocus)
+      Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Escape) {
+          editor.cancel()
+          event.accepted = true
+        } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                   && editor.inviteSuggestOpen && editor.invitePicks.length) {
+          editor.suggestTarget = "invite"
+          editor.suggestHeld = true
+          editor.pickInvite(editor.invitePicks[0].email)
+          event.accepted = true
+        } else {
+          editor.fieldKey(event)
+        }
+      }
+    }
+
+    SuggestList {
+      target: "invite"
+      visible: editor.creating && editor.inviteSuggestOpen && editor.invitePicks.length > 0
+      picks: editor.invitePicks
+      onPicked: function(email) { editor.pickInvite(email) }
     }
 
     Toggle {

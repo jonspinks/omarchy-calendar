@@ -7,7 +7,7 @@ const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, 
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
   " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes," +
-  " draftSnapshot, draftUnchanged, VIEWS }")()
+  " draftSnapshot, draftUnchanged, VIEWS, knownGuests, guestSuggestions, guestQuery, applyGuestPick, slotStart }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -208,6 +208,63 @@ eq(M.notesHtml("Agenda\n\nItem one", "#abc"), "Agenda<br><br>Item one", "notesHt
 
 eq([M.meetingNotes("____\n\n____"), M.meetingNotes("  \n"), M.meetingNotes(null), M.meetingNotes("\n____\nHi\n")],
    ["", "", "", "____\nHi"], "meetingNotes: only divider lines is no notes")
+
+// A double-clicked hour, and the hour the pointer is in.
+let atTwo = M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c", 14 * 60)
+eq([atTwo.date, atTwo.endDate, atTwo.from, atTwo.to], ["2026-10-02", "2026-10-02", "14:00", "15:00"], "create: a double-clicked hour")
+let noon = M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c")
+eq([noon.from, noon.to], ["12:00", "13:00"], "create: today, with no hour, is the next hour")
+eq(M.newDraft("2026-10-02", new Date(2026, 8, 27, 21, 10), "Google/c", "14:00").from, "09:00", "create: a start that isn't a number is ignored")
+eq(M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c", 23 * 60).to, "23:59", "create: a late hour still ends the same day")
+eq([M.slotStart(0, 40, 7, 20), M.slotStart(41, 40, 7, 20), M.slotStart(40 * 12, 40, 7, 20)],
+   [420, 480, 19 * 60], "slot: the hour the pointer is in")
+eq([M.slotStart(-1, 40, 7, 20), M.slotStart(40 * 13, 40, 7, 20), M.slotStart(0, 0, 7, 20)],
+   [-1, -1, -1], "slot: outside the grid is no hour")
+
+// People to offer while an address is typed: from events already cached.
+const book = M.knownGuests({
+  "2026-10-01": [
+    { uid: "a", guests: [
+      { email: "Me@x.co", name: "Me", me: true },
+      { email: "room@x.co", name: "Board room", room: true },
+      { email: "maya@x.co", name: "Maya" },
+      { email: "nope", name: "Nope" },
+      { email: "", name: "Blank" },
+      { email: "owen@x.co", name: "Owen" }
+    ]},
+    { uid: "b", guests: [{ email: "leah@x.co", name: "Leah Okonkwo" }] }
+  ],
+  "2026-10-02": [
+    { uid: "a", guests: [{ email: "maya@x.co", name: "Maya Chen" }, { email: "owen@x.co", name: "O" }] },
+    { uid: "c", guests: [{ email: "maya@x.co", name: "M" }, { email: "leah@x.co", name: "leah@x.co" }] }
+  ]
+})
+eq(book.map(function(p) { return [p.email, p.name, p.count] }), [
+  ["leah@x.co", "Leah Okonkwo", 2],
+  ["maya@x.co", "Maya Chen", 2],
+  ["owen@x.co", "Owen", 1]
+], "knownGuests: skip you, rooms and bad addresses; one count per event; longest name")
+const names = [
+  { email: "ann@x.co", name: "Anna", count: 4 },
+  { email: "amy@x.co", name: "Anya", count: 1 },
+  { email: "zoe@x.co", name: "Zoe Ann", count: 9 },
+  { email: "lee@x.co", name: "Lee", count: 3 }
+]
+eq(M.guestSuggestions(names, "an", [], 6).map(function(p) { return [p.email, p.name, p.detail, p.rank] }), [
+  ["ann@x.co", "Anna", "ann@x.co", 0],
+  ["amy@x.co", "Anya", "amy@x.co", 0],
+  ["zoe@x.co", "Zoe Ann", "zoe@x.co", 1]
+], "suggest: a prefix beats a middle, then whoever you meet more often")
+eq(M.guestSuggestions(names, "a", [], 6), [], "suggest: one letter stays quiet")
+eq(M.guestSuggestions(names, "ann@x.co", [], 6), [], "suggest: a finished address is not offered again")
+eq(M.guestSuggestions(names, "lee@x.co, an", ["amy@x.co"], 6).map(function(p) { return p.email }),
+   ["ann@x.co", "zoe@x.co"], "suggest: skip anyone already invited")
+eq(M.guestSuggestions([{ email: "maya@x.co", name: "Maya Chen", count: 2 }], "x.co", [], 6),
+   [{ email: "maya@x.co", name: "Maya Chen", detail: "maya@x.co", rank: 1, count: 2 }], "suggest: part of an address")
+eq(M.guestQuery("a@b.co, may"), "may", "guestQuery")
+eq(M.guestQuery("a@b.co;may"), "may", "guestQuery: a semicolon")
+eq(M.applyGuestPick("a@b.co, may", "maya@x.co"), "a@b.co, maya@x.co", "applyGuestPick")
+eq(M.applyGuestPick("may", "maya@x.co"), "maya@x.co", "applyGuestPick: the only address")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

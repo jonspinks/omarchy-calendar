@@ -749,9 +749,21 @@ function eventDraft(ev) {
   return d
 }
 
+// Minutes after midnight for a click in the hour grid, or -1 when it misses
+// the hours that grid is showing. y is measured from the first hour's line.
+function slotStart(y, hourHeight, firstHour, lastHour) {
+  if (!(hourHeight > 0)) return -1
+  var index = Math.floor(y / hourHeight)
+  if (index < 0 || index >= lastHour - firstHour) return -1
+  return (firstHour + index) * 60
+}
+
 // A new event on dayKey: the next whole hour today, 9am on any other day.
-function newDraft(dayKey, now, calendarRef) {
-  var start = dayKey === keyForDate(now) ? Math.min(23 * 60, (now.getHours() + 1) * 60) : 9 * 60
+// startMinute, when it is a real number, is a double-clicked hour instead.
+function newDraft(dayKey, now, calendarRef, startMinute) {
+  var clicked = typeof startMinute === "number" && isFinite(startMinute) && startMinute >= 0
+  var start = clicked ? Math.min(23 * 60, Math.floor(startMinute))
+                      : (dayKey === keyForDate(now) ? Math.min(23 * 60, (now.getHours() + 1) * 60) : 9 * 60)
   return { mode: "create", uid: "", calendar: calendarRef || "", title: "", location: "", notes: "",
            allDay: false, date: dayKey, endDate: dayKey,
            from: clockInput(start), to: clockInput(Math.min(start + 60, 23 * 60 + 59)),
@@ -921,6 +933,105 @@ function guestSummary(guests, total) {
   return count + (count === 1 ? " guest" : " guests") + (parts.length ? " · " + parts.join(", ") : "")
 }
 
+function isEmail(text) {
+  return EMAIL.test(String(text || "").trim())
+}
+
+// People already on cached events, for the invite box. Skips you, rooms,
+// and anything that isn't an address. One event counts once however many
+// days it covers, and the longest real name wins.
+function knownGuests(byDay) {
+  var people = {}, seen = {}
+  for (var key in (byDay || {})) {
+    var rows = byDay[key] || []
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i]
+      var uid = String(row.uid || (key + "#" + i))
+      var guests = row.guests || []
+      for (var g = 0; g < guests.length; g++) {
+        var guest = guests[g]
+        var email = String(guest.email || "").trim().toLowerCase()
+        if (!email || !EMAIL.test(email) || guest.me || guest.room) continue
+        var id = uid + "\n" + email
+        var first = !seen[id]
+        if (first) seen[id] = true
+        var raw = String(guest.name || "").trim()
+        var name = raw.toLowerCase() === email ? "" : raw
+        var have = people[email]
+        if (!have) people[email] = { email: email, name: name, count: first ? 1 : 0 }
+        else {
+          if (first) have.count++
+          if (name.length > have.name.length) have.name = name
+        }
+      }
+    }
+  }
+  var out = []
+  for (var addr in people) out.push(people[addr])
+  out.sort(function(a, b) {
+    var an = (a.name || a.email).toLowerCase(), bn = (b.name || b.email).toLowerCase()
+    if (an !== bn) return an < bn ? -1 : 1
+    return a.email < b.email ? -1 : a.email > b.email ? 1 : 0
+  })
+  return out
+}
+
+// The address being typed: everything after the last comma or semicolon.
+function guestQuery(text) {
+  var s = String(text || "")
+  var cut = Math.max(s.lastIndexOf(","), s.lastIndexOf(";"))
+  return s.slice(cut + 1).replace(/^\s+/, "").replace(/\s+$/, "")
+}
+
+// Replace that fragment with the address they picked.
+function applyGuestPick(text, email) {
+  var s = String(text || "")
+  var cut = Math.max(s.lastIndexOf(","), s.lastIndexOf(";"))
+  if (cut < 0) return email
+  var lead = (s.slice(cut + 1).match(/^\s*/) || [""])[0]
+  return s.slice(0, cut + 1) + lead + email
+}
+
+// Up to `limit` people whose name or address matches the fragment being
+// typed. A prefix beats a match in the middle, then whoever appears on
+// more events. Hidden once the fragment is itself an address, is shorter
+// than two characters, or that person is already invited.
+function guestSuggestions(people, text, taken, limit) {
+  var q = guestQuery(text).toLowerCase()
+  if (q.length < 2 || EMAIL.test(q)) return []
+  var skip = {}
+  var list = taken || []
+  for (var i = 0; i < list.length; i++) skip[String(list[i] || "").toLowerCase()] = true
+  var parts = String(text || "").split(/[,;]/)
+  for (var p = 0; p < parts.length - 1; p++) {
+    var earlier = parts[p].trim().toLowerCase()
+    if (earlier) skip[earlier] = true
+  }
+  var cap = limit > 0 ? limit : 6
+  var hits = []
+  for (var n = 0; n < (people || []).length; n++) {
+    var person = people[n]
+    var email = String(person.email || "").toLowerCase()
+    if (!email || skip[email]) continue
+    var name = String(person.name || "").trim()
+    var named = name !== "" && name.toLowerCase() !== email
+    var nameL = name.toLowerCase()
+    var rank = (nameL.indexOf(q) === 0 || email.indexOf(q) === 0) ? 0
+             : (nameL.indexOf(q) >= 0 || email.indexOf(q) >= 0) ? 1 : -1
+    if (rank < 0) continue
+    hits.push({ email: email, name: named ? name : email, detail: named ? email : "",
+                rank: rank, count: person.count || 0 })
+  }
+  hits.sort(function(a, b) {
+    if (a.rank !== b.rank) return a.rank - b.rank
+    if (a.count !== b.count) return b.count - a.count
+    var an = a.name.toLowerCase(), bn = b.name.toLowerCase()
+    if (an !== bn) return an < bn ? -1 : 1
+    return a.email < b.email ? -1 : a.email > b.email ? 1 : 0
+  })
+  return hits.slice(0, cap)
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     dateKey: dateKey,
@@ -967,7 +1078,14 @@ if (typeof module !== "undefined") {
     guestEdit: guestEdit,
     guestRemove: guestRemove,
     guestRows: guestRows,
-    guestSummary: guestSummary
+    guestSummary: guestSummary,
+    isEmail: isEmail,
+    knownGuests: knownGuests,
+    guestQuery: guestQuery,
+    applyGuestPick: applyGuestPick,
+    guestSuggestions: guestSuggestions,
+    slotStart: slotStart,
+    newDraft: newDraft
   }
 }
 

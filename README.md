@@ -39,7 +39,8 @@ overwriting their change.
 **See who's coming.** Open any meeting and the guest list is there: who
 said yes, maybe or no, and who hasn't answered yet, with the organiser
 first. On your own meetings, add people or take them off right there; they
-get the invitation or the cancellation when you save.
+get the invitation or the cancellation when you save. Typing a name offers
+people from your other events.
 
 ![An invitation, answered from the calendar](screenshots/3-invitation.png)
 
@@ -160,11 +161,13 @@ ID. If the organisation requires admin consent, an admin has to grant it once.
 
 - **Click an event** to open it: edit it, delete it, answer it, open it in
   Google Calendar or Outlook, or join it. **New** (or `n`) starts one on the
-  selected day.
+  selected day. In a day or week view, double-click an empty hour to start
+  one then.
 - **Guests:** an event lists everyone invited and their answers. On one you
-  can edit, **−** takes a guest off and the box below adds addresses (type
-  several, or press Enter after each). Nothing is sent until **Save**. From
-  a terminal: `calendar-ctl guests <uid>`, and `calendar-ctl update <uid>
+  can edit, **−** takes a guest off and the box below adds a name or an
+  address (several, separated by commas, or press Enter after each). Names
+  come from people already on your events. Nothing is sent until **Save**.
+  From a terminal: `calendar-ctl guests <uid>`, and `calendar-ctl update <uid>
   --invite <email> --uninvite <email>`.
 - **Calendars:** click one in the list on the left to show or hide it. A
   hidden calendar isn't downloaded at all. `calendar-ctl choose` does the
