@@ -6,7 +6,8 @@ const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
 const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
-  " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes, VIEWS }")()
+  " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes," +
+  " draftSnapshot, draftUnchanged, VIEWS }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -34,6 +35,47 @@ d.allDay = true; d.endDate = "2026-10-03"; d.busy = false
 eq(M.draftArgs(d).args.slice(5, 10), ["2026-10-02", "--end", "2026-10-04", "--all-day", "--free"], "create: all-day ends the day after")
 d.invite = "a@b.co, bad"
 eq(M.draftArgs(d).error, "bad isn't an email address.", "create: bad guest")
+let noted = M.newDraft("2026-10-02", new Date(2026, 8, 27, 21, 10), "Google/c")
+noted.notes = "Agenda\n--bring this"
+let notedArgs = M.draftArgs(noted).args
+eq(notedArgs.slice(notedArgs.indexOf("--notes"), notedArgs.indexOf("--notes") + 2),
+   ["--notes", "Agenda\n--bring this"], "create: notes stay a value")
+noted.notes = " \n "
+eq(M.draftArgs(noted).args.indexOf("--notes"), -1, "create: blank notes are left off")
+
+// Dismissing the popup keeps a new event only once it differs from the start.
+let fresh = M.newDraft("2026-10-02", new Date(2026, 8, 27, 21, 10), "Google/c")
+let base = M.draftSnapshot(fresh)
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), true, "draft: untouched is dropped")
+eq(M.draftUnchanged(null, base), true, "draft: no baseline is dropped")
+eq(M.draftUnchanged(base, null), true, "draft: no current copy is dropped")
+fresh.title = "Standup"
+eq(base.title, "", "draft: the baseline is a copy")
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: a title keeps it")
+fresh.title = ""
+fresh.invite = "a@b.co"
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: an address keeps it")
+fresh.invite = ""
+fresh.location = "Room 2"
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: a place keeps it")
+fresh.location = ""
+fresh.from = "15:00"
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: a time keeps it")
+fresh.from = base.from
+fresh.allDay = true
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: all day keeps it")
+fresh.allDay = false
+fresh.busy = false
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: free keeps it")
+fresh.busy = true
+fresh.calendar = "Plan2/c"
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: another calendar keeps it")
+fresh.calendar = "Google/c"
+fresh.date = "2026-10-03"
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: another day keeps it")
+fresh.date = base.date
+fresh.notes = "Bring the doc"
+eq(M.draftUnchanged(base, M.draftSnapshot(fresh)), false, "draft: notes keep it")
 
 // Editing sends only what changed.
 const ev = { uid: "P/c/1", account: "P", calendar: "c", title: "T", location: "", busy: true, recurring: true,

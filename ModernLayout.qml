@@ -22,6 +22,9 @@ Item {
 
   readonly property var next: p ? Model.nextUp(p.eventIndex.byDay, p.clockNow, p.use24h) : null
 
+  function rememberDraft() { sheetEditor.remember() }
+  function resumeDraft() { sheetEditor.resume() }
+
   readonly property string title: {
     if (!p) return ""
     if (p.viewMode === "month")

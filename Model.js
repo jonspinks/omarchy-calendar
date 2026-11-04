@@ -752,11 +752,32 @@ function eventDraft(ev) {
 // A new event on dayKey: the next whole hour today, 9am on any other day.
 function newDraft(dayKey, now, calendarRef) {
   var start = dayKey === keyForDate(now) ? Math.min(23 * 60, (now.getHours() + 1) * 60) : 9 * 60
-  return { mode: "create", uid: "", calendar: calendarRef || "", title: "", location: "",
+  return { mode: "create", uid: "", calendar: calendarRef || "", title: "", location: "", notes: "",
            allDay: false, date: dayKey, endDate: dayKey,
            from: clockInput(start), to: clockInput(Math.min(start + 60, 23 * 60 + 59)),
            invite: "", series: false, recurring: false, busy: true, original: null,
            guests: [], invited: [], uninvited: [], guestText: "" }
+}
+
+// The fields of a new event, copied so a later edit can be compared with how
+// it started. The panel keeps a new event that differs from this when the
+// popup is dismissed, and drops one that does not.
+function draftSnapshot(d) {
+  if (!d) return null
+  return {
+    title: String(d.title || ""), location: String(d.location || ""), invite: String(d.invite || ""),
+    notes: String(d.notes || ""),
+    date: String(d.date || ""), endDate: String(d.endDate || ""),
+    from: String(d.from || ""), to: String(d.to || ""),
+    allDay: !!d.allDay, busy: d.busy !== false, calendar: String(d.calendar || "")
+  }
+}
+
+function draftUnchanged(baseline, current) {
+  if (!baseline || !current) return true
+  var keys = ["title", "location", "invite", "notes", "date", "endDate", "from", "to", "allDay", "busy", "calendar"]
+  for (var i = 0; i < keys.length; i++) if (baseline[keys[i]] !== current[keys[i]]) return false
+  return true
 }
 
 // { args: [...] } for calendar-ctl, or { error: "what to fix" }.
@@ -784,6 +805,8 @@ function draftArgs(d) {
     if (d.allDay) args.push("--all-day")
     args.push(d.busy === false ? "--free" : "--busy")
     if (d.location) args.push("--location", d.location)
+    var notes = String(d.notes || "").trim()
+    if (notes) args.push("--notes", notes)
     var people = parseAddresses(d.invite)
     if (people.error) return people
     for (var i = 0; i < people.list.length; i++) args.push("--invite", people.list[i])

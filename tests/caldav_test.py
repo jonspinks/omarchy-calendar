@@ -184,6 +184,7 @@ class Parsing(unittest.TestCase):
         self.assertEqual(e["uid"], "F/work/meet-1@example.com")
         self.assertEqual((e["start"], e["end"], e["allDay"]), ("2026-10-02T14:00:00Z", "2026-10-02T15:00:00Z", False))
         self.assertEqual(e["title"], "Plan, review; and ship")
+        self.assertEqual(e["notes"], "Agenda:\nOne\nJoin: https://acme.zoom.us/j/123456789?pwd=abc")
         self.assertEqual(e["join"], {"url": "https://acme.zoom.us/j/123456789?pwd=abc", "kind": "zoom"})
         self.assertEqual((e["response"], e["organizer"]), ("tentative", False))
         self.assertEqual(e["remind"], [15])   # not the email alarm, nor the fixed-time one
