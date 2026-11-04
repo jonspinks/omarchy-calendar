@@ -15,7 +15,7 @@
     calendar-ctl remove <name>
     calendar-ctl respond <uid> accept|tentative|decline [--series]
     calendar-ctl create <account>/<calendar id> --title <t> --start <when> [--end <when>]
-                 [--all-day] [--location <text>] [--invite <email>]... [--busy | --free]
+                 [--all-day] [--location <text>] [--notes <text>] [--invite <email>]... [--busy | --free]
     calendar-ctl update <uid> [--title <t>] [--start <when>] [--end <when>]
                  [--all-day | --timed] [--location <text>] [--busy | --free]
                  [--invite <email>]... [--uninvite <email>]... [--series]
@@ -193,7 +193,8 @@ def event_options(args, cmd):
     """--flag value pairs. A value is taken as it is, even if it starts with a
     dash, so a title from anywhere can't turn into an option."""
     opt, it = {}, iter(args)
-    names = {"--title": "title", "--start": "start", "--end": "end", "--location": "location"}
+    names = {"--title": "title", "--start": "start", "--end": "end", "--location": "location",
+             "--notes": "notes"}
     for x in it:
         if x in names:
             v = next(it, None)

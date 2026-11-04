@@ -246,7 +246,7 @@ def _set_partstat(block, me, partstat):
 
 # ---------------------------------------------------------------- create
 
-def create(a, session, cal, title, s, e, all_day, location, invite, busy):
+def create(a, session, cal, title, s, e, all_day, location, invite, busy, notes=""):
     """A new resource in the calendar; returns (href, uid, text, etag).
 
     PUT with If-None-Match: *, so an existing resource is never replaced.
@@ -262,6 +262,8 @@ def create(a, session, cal, title, s, e, all_day, location, invite, busy):
              line("SUMMARY", title, text=True)]
     if location:
         lines.append(line("LOCATION", location, text=True))
+    if notes:
+        lines.append(line("DESCRIPTION", notes, text=True))
     lines.append("TRANSP:" + ("OPAQUE" if busy else "TRANSPARENT"))
     if invite:
         lines.append(line("ORGANIZER", _mailto(me)))

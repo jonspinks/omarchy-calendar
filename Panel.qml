@@ -252,6 +252,8 @@ Panel {
   property var draft: null
   property var draftEvent: null
   property string editorError: ""
+  // How a new event looked when it was opened. Compared when the popup is dismissed.
+  property var createBaseline: null
   readonly property bool editorOpen: draft !== null
 
   readonly property var editableCalendars: {
@@ -276,6 +278,7 @@ Panel {
     if (!ev || !ev.uid) return
     root.editorError = ""
     root.draftEvent = ev
+    root.createBaseline = null
     root.draft = Model.eventDraft(ev)
   }
 
@@ -296,14 +299,35 @@ Panel {
   function newEvent() {
     root.editorError = ""
     root.draftEvent = null
-    root.draft = Model.newDraft(root.selectedKey, new Date(), root.defaultCalendar())
+    var d = Model.newDraft(root.selectedKey, new Date(), root.defaultCalendar())
+    root.createBaseline = Model.draftSnapshot(d)
+    root.draft = d
   }
 
   function closeEditor() {
     root.draft = null
     root.draftEvent = null
     root.editorError = ""
+    root.createBaseline = null
     Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
+  }
+
+  // The editor that is on screen. The other one's draft is null.
+  function rememberCreate() {
+    if (!root.draft || root.draft.mode !== "create") return
+    if (root.modern) modernLayout.rememberDraft()
+    else classicEditor.remember()
+  }
+
+  function resumeCreateFocus() {
+    if (!root.draft || root.draft.mode !== "create") return
+    if (root.modern) modernLayout.resumeDraft()
+    else classicEditor.resume()
+  }
+
+  function keepingCreate() {
+    return !!(root.draft && root.draft.mode === "create"
+              && !Model.draftUnchanged(root.createBaseline, Model.draftSnapshot(root.draft)))
   }
 
   function saveDraft(d) {
@@ -500,7 +524,9 @@ Panel {
 
   function open() {
     refresh()
+    var resume = root.draft && root.draft.mode === "create"
     root.controller.show()
+    if (resume) Qt.callLater(root.resumeCreateFocus)
     // Set after showing, not before: showing hands the popout coordinator
     // over, which closes whichever panel was open, and that close clears the
     // shared flag. Deferring means the panel taking over always wins, while
@@ -513,10 +539,15 @@ Panel {
 
   function close() {
     setCenterHoverRevealSuppressed(false)
-    // Dismissing the panel mid-edit would otherwise leave the inputs up,
-    // waiting behind a closed popup for the next time it opens.
     if (root.editingLife) root.cancelEditingLife()
-    if (root.editorOpen && !writeProc.running) root.closeEditor()
+    // A new event that has been started stays, so looking up an address and
+    // clicking outside does not throw the form away. Cancel, Escape and the
+    // dimmed sheet still drop it. An edit of an existing event is dropped
+    // too, so it is not waiting the next time the panel opens.
+    if (root.editorOpen && !writeProc.running) {
+      root.rememberCreate()
+      if (!root.keepingCreate()) root.closeEditor()
+    }
     root.controller.hide()
   }
 
@@ -693,6 +724,7 @@ Panel {
       }
 
       ModernLayout {
+        id: modernLayout
         visible: root.modern
         anchors.fill: parent
         p: root
@@ -983,6 +1015,7 @@ Panel {
 
           // ---- One event, over the views while it is open.
           EventEditor {
+            id: classicEditor
             visible: root.editorOpen
             width: Math.min(parent.width, Style.space(520))
             anchors.horizontalCenter: parent.horizontalCenter

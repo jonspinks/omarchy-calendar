@@ -31,7 +31,7 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 
 from . import auth, files, ical
-from .model import find_join, guest, guest_fields, utc_iso
+from .model import find_join, guest, guest_fields, plain_notes, utc_iso
 
 FASTMAIL = "https://caldav.fastmail.com/dav/calendars/user/%s/"
 ICLOUD = "https://caldav.icloud.com/"
@@ -465,6 +465,7 @@ def normalise(account, cal, v, start, end, etag="", me="", occurrence=None, href
         "start": start.isoformat() if all_day else utc_iso(start),
         "end": end.isoformat() if all_day else utc_iso(end),
         "location": v.value("LOCATION"),
+        "notes": plain_notes(v.value("DESCRIPTION")),
         "join": find_join(*conf, v.value("URL"), v.value("LOCATION"), v.value("DESCRIPTION")),
         "response": response,
         "organizer": organizer,

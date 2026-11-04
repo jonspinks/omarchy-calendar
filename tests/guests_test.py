@@ -307,5 +307,40 @@ class Writing(unittest.TestCase):
         self.assertEqual((p.reads, p.writes), (0, []))
 
 
+class CreateNotes(unittest.TestCase):
+    def sent(self, provider, module, notes):
+        out = []
+
+        def send_json(method, url, tok, body=None, headers=None):
+            out.append((method, url, body))
+            return {"id": "x"}
+
+        account = {"name": "A", "provider": provider, "email": "me@example.com"}
+        cal = {"id": "c", "editable": True, "name": "C", "defaultRemind": []}
+        with mock.patch.object(edit, "calendar_of", return_value=(account, cal)), \
+             mock.patch.object(edit, "token", return_value="tok"), \
+             mock.patch.object(auth, "send_json", send_json), \
+             mock.patch.object(edit, "_add"), \
+             mock.patch.object(module, "normalise", return_value={"uid": "A/c/x"}):
+            edit.create("A/c", "Standup", "2026-10-02 09:00", notes=notes)
+        return out[0]
+
+    def test_google_puts_notes_in_the_description(self):
+        method, url, body = self.sent("google", google, "Agenda\nBring the doc")
+        self.assertEqual(method, "POST")
+        self.assertIn("/calendars/c/events", url)
+        self.assertEqual(body["description"], "Agenda\nBring the doc")
+
+    def test_graph_puts_notes_in_the_body(self):
+        method, url, body = self.sent("microsoft", graph, "Agenda\nBring the doc")
+        self.assertEqual(method, "POST")
+        self.assertIn("/me/calendars/c/events", url)
+        self.assertEqual(body["body"], {"contentType": "text", "content": "Agenda\nBring the doc"})
+
+    def test_blank_notes_are_left_off(self):
+        _, _, body = self.sent("google", google, " \n ")
+        self.assertNotIn("description", body)
+
+
 if __name__ == "__main__":
     unittest.main()

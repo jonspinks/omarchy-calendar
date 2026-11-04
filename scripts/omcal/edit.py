@@ -164,11 +164,24 @@ def calendar_of(ref):
     return a, cal
 
 
-def create(ref, title, start, end=None, all_day=False, location="", invite=(), busy=None):
+def _notes(text):
+    """Invitation text as typed, with the ends stripped. Empty when blank.
+
+    Capped like the notes kept from a provider, so one event cannot fill the cache.
+    """
+    from .model import NOTES_CAP
+    notes = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(notes) > NOTES_CAP:
+        notes = notes[:NOTES_CAP - 1].rstrip() + "…"
+    return notes
+
+
+def create(ref, title, start, end=None, all_day=False, location="", invite=(), busy=None, notes=""):
     """A new event, and invitations to anyone named in invite. Returns its uid.
 
     busy is how it shows to people checking your availability: busy by
     default for a timed event, free for an all-day one, as both apps do.
+    notes is the invitation text: the description, or the body.
     """
     from datetime import timedelta
     from . import google, graph
@@ -186,10 +199,11 @@ def create(ref, title, start, end=None, all_day=False, location="", invite=(), b
     if busy is None:
         busy = not all_day
     invite = _addresses(invite)
+    notes = _notes(notes)
     tok = token(a)
     if a["provider"] == "caldav":
         from . import davedit
-        href, ical_uid, text, etag = davedit.create(a, tok, cal, title, s, e, all_day, location, invite, busy)
+        href, ical_uid, text, etag = davedit.create(a, tok, cal, title, s, e, all_day, location, invite, busy, notes)
         _resource(a, cal["id"], href, (text, etag))
         return "%s/%s/%s" % (a["name"], cal["id"], ical_uid)
     if a["provider"] == "google":
@@ -198,6 +212,8 @@ def create(ref, title, start, end=None, all_day=False, location="", invite=(), b
                 "start": {"date": s.isoformat()} if all_day else {"dateTime": utc_iso(s)},
                 "end": {"date": e.isoformat()} if all_day else {"dateTime": utc_iso(e)},
                 "attendees": [{"email": m} for m in invite]}
+        if notes:
+            body["description"] = notes
         ev = auth.send_json("POST", GOOGLE + "/calendars/%s/events?sendUpdates=all" % q(cal["id"]), tok, body)
         new = google.normalise(a["name"], cal, ev)
     else:
@@ -208,6 +224,8 @@ def create(ref, title, start, end=None, all_day=False, location="", invite=(), b
                 "end": {"dateTime": stamp(e), "timeZone": zone},
                 "location": {"displayName": location},
                 "attendees": [{"emailAddress": {"address": m}, "type": "required"} for m in invite]}
+        if notes:
+            body["body"] = {"contentType": "text", "content": notes}
         ev = auth.send_json("POST", GRAPH + "/me/calendars/%s/events" % q(cal["id"]), tok, body,
                             {"Prefer": 'outlook.timezone="UTC"'})
         new = graph.normalise(a["name"], cal, ev, a.get("email", ""))

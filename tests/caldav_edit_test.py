@@ -273,7 +273,15 @@ class Create(Case):
         self.assertEqual(v.value("TRANSP"), "TRANSPARENT")
         self.assertIsNone(v.get("ORGANIZER"))   # nobody invited: no scheduling
         self.assertIsNone(v.get("LOCATION"))
+        self.assertIsNone(v.get("DESCRIPTION"))
+        self.assertEqual(self.published()[uid]["notes"], "")
         self.assertEqual(self.state()[uid]["allDay"], True)
+
+    def test_notes_are_the_description(self):
+        uid = edit.create("F/work", "Standup", "2026-10-06T12:00:00+00:00", notes="Agenda\nBring the doc")
+        [v] = ical.parse(self.server.writes()[0][3]).find("VEVENT")
+        self.assertEqual(v.value("DESCRIPTION"), "Agenda\nBring the doc")
+        self.assertEqual(self.published()[uid]["notes"], "Agenda\nBring the doc")
 
     def test_a_read_only_calendar(self):
         st = self.state(whole=True)

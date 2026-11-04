@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls as Controls
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -114,6 +115,7 @@ Item {
     editor.showAllGuests = false
     editor.guestError = ""
     guestField.text = draft.guestText || ""
+    notesField.text = draft.notes || ""
     Qt.callLater(function() {
       if (editor.editable) { titleField.forceActiveFocus(); titleField.selectAll() }
       else form.forceActiveFocus()
@@ -138,7 +140,38 @@ Item {
     d.invited = editor.invited
     d.uninvited = editor.uninvited
     d.guestText = guestField.text
+    d.notes = notesField.text
     return d
+  }
+
+  // Write the fields back onto the create draft. The panel reads that when
+  // the popup is dismissed, so an address typed here is still there when it
+  // opens again. Cancel and Escape never ask for this: they drop the draft.
+  function remember() {
+    if (!draft || draft.mode !== "create") return
+    draft.title = titleField.text
+    draft.location = locationField.text
+    draft.invite = inviteField.text
+    draft.date = dateField.date
+    draft.endDate = endDateField.date
+    draft.from = fromField.text
+    draft.to = toField.text
+    draft.allDay = editor.allDay
+    draft.busy = editor.busy
+    draft.calendar = editor.calendarRef
+    draft.notes = notesField.text
+  }
+
+  // The field they were filling in, without selecting its text: selecting
+  // the title would wipe it on the next key.
+  function resume() {
+    if (!editor.creating) return
+    var field = inviteField.text !== "" ? inviteField
+              : locationField.text !== "" ? locationField
+              : notesField.text !== "" ? notesField
+              : titleField
+    field.forceActiveFocus()
+    field.deselect()
   }
 
   // The addresses typed in the guest box, onto the list (Enter or Add).
@@ -212,6 +245,42 @@ Item {
     foreground: editor.foreground
     font.family: editor.fontFamily
     Keys.onPressed: function(event) { editor.fieldKey(event) }
+  }
+
+  // Several lines, so Enter starts a new one instead of saving. Escape still
+  // drops the form. Styled like Field; the kit has no multi-line input.
+  component NotesInput: Controls.TextArea {
+    id: notesInput
+    readOnly: editor.saving
+    wrapMode: TextEdit.Wrap
+    selectByMouse: true
+    placeholderText: "Agenda, a link, anything the invitation should say"
+    font.family: editor.fontFamily
+    font.pixelSize: Style.font.body
+    color: editor.foreground
+    selectionColor: Style.selectionFillFor(editor.foreground, editor.themeAccent)
+    selectedTextColor: editor.foreground
+    placeholderTextColor: Qt.darker(editor.foreground, 1.6)
+    readonly property bool _focused: activeFocus
+    readonly property bool _hot: hovered
+    readonly property var _borderSpec: Border.controlSpec(_focused ? "focus" : (_hot ? "hover-cursor" : "normal"),
+                                                          editor.foreground, editor.themeAccent)
+    leftPadding: Style.spacing.controlPaddingX + Border.left(_borderSpec)
+    rightPadding: Style.spacing.controlPaddingX + Border.right(_borderSpec)
+    topPadding: Style.spacing.inputPaddingY + Border.top(_borderSpec)
+    bottomPadding: Style.spacing.inputPaddingY + Border.bottom(_borderSpec)
+    height: Style.font.body * 6 + topPadding + bottomPadding
+    background: BorderSurface {
+      color: Style.controlFill(notesInput._focused, notesInput._hot, editor.foreground, editor.themeAccent)
+      borderSpec: notesInput._borderSpec
+      radius: Style.cornerRadius
+    }
+    Keys.onPressed: function(event) {
+      if (event.key === Qt.Key_Escape) {
+        editor.cancel()
+        event.accepted = true
+      }
+    }
   }
 
   Column {
@@ -340,15 +409,23 @@ Item {
       placeholderText: "Location"
     }
 
-    // Shown when the entry has notes. Width is the form's own width: a nested
-    // column, or a text height tied to contentHeight, laid out as nothing.
-    // The text can be selected and copied, and https links open in the
-    // browser. Long notes (a Teams footer) scroll inside the box, which takes
-    // the room the sheet has left, so the buttons below stay on screen.
+    // Typed on a new event, and sent as the invitation text. An existing
+    // event shows its notes below, read-only: they can be selected, and https
+    // links open in the browser.
     Caption {
-      visible: editor.notesText !== ""
+      visible: editor.creating || editor.notesText !== ""
       text: "NOTES"
     }
+    NotesInput {
+      id: notesField
+      visible: editor.creating
+      width: parent.width
+    }
+
+    // Shown when the entry has notes. Width is the form's own width: a nested
+    // column, or a text height tied to contentHeight, laid out as nothing.
+    // Long notes (a Teams footer) scroll inside the box, which takes the room
+    // the sheet has left, so the buttons below stay on screen.
     Rectangle {
       id: notesBox
       visible: editor.notesText !== ""
