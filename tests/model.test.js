@@ -7,7 +7,8 @@ const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, 
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
   " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes," +
-  " draftSnapshot, draftUnchanged, VIEWS, knownGuests, guestSuggestions, guestQuery, applyGuestPick, slotStart }")()
+  " draftSnapshot, draftUnchanged, VIEWS, knownGuests, guestSuggestions, guestQuery, applyGuestPick, slotStart," +
+  " parseMeetingLinks }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -265,6 +266,33 @@ eq(M.guestQuery("a@b.co, may"), "may", "guestQuery")
 eq(M.guestQuery("a@b.co;may"), "may", "guestQuery: a semicolon")
 eq(M.applyGuestPick("a@b.co, may", "maya@x.co"), "a@b.co, maya@x.co", "applyGuestPick")
 eq(M.applyGuestPick("may", "maya@x.co"), "maya@x.co", "applyGuestPick: the only address")
+
+// Personal rooms: a name, then an https link. No file is an empty list.
+eq(M.parseMeetingLinks(""), [], "rooms: nothing")
+eq(M.parseMeetingLinks(null), [], "rooms: no text")
+eq(M.parseMeetingLinks(" \n# a note\n\nnot a link\nOffice http://example.com/room\n"), [], "rooms: comments, blanks and http are skipped")
+eq(M.parseMeetingLinks("Work room  https://teams.microsoft.com/l/meetup-join/abc.\r\nhttps://us02web.zoom.us/my/steven\n"), [
+  { name: "Work room", url: "https://teams.microsoft.com/l/meetup-join/abc" },
+  { name: "https://us02web.zoom.us/my/steven", url: "https://us02web.zoom.us/my/steven" }
+], "rooms: a name with spaces, a bare link, and a trailing period")
+eq(M.parseMeetingLinks("Steven https://meet.proton.me/join/abc#xyz"), [
+  { name: "Steven", url: "https://meet.proton.me/join/abc#xyz" }
+], "rooms: a fragment stays")
+eq(M.parseMeetingLinks('Room <img src="https://evil.test/x"> https://meet.google.com/abc-defg-hij'), [
+  { name: 'Room <img src="https://evil.test/x">', url: "https://meet.google.com/abc-defg-hij" }
+], "rooms: the last link is the room, and the name stays plain text")
+eq(M.parseMeetingLinks("Work https://zoom.example/j/1\nAgain https://zoom.example/j/1\n"), [
+  { name: "Work", url: "https://zoom.example/j/1" }
+], "rooms: the same link once")
+eq(M.parseMeetingLinks("HTTPS://teams.microsoft.com/meet/AbC"), [
+  { name: "https://teams.microsoft.com/meet/AbC", url: "https://teams.microsoft.com/meet/AbC" }
+], "rooms: the scheme is written https")
+let many = []
+for (let n = 0; n < 13; n++) many.push("Room " + n + " https://meet.example/r/" + n)
+eq(M.parseMeetingLinks(many.join("\n")).length, 12, "rooms: twelve is enough")
+eq(M.parseMeetingLinks("A".repeat(90) + " https://meet.example/room")[0].name,
+   "A".repeat(79) + "…", "rooms: a long name is shortened")
+eq(M.parseMeetingLinks("x".repeat(17000) + "\nKept https://meet.example/kept"), [], "rooms: text past the cap is not read")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

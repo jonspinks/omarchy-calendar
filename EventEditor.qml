@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Controls as Controls
+import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -82,6 +84,33 @@ Item {
   readonly property var knownPeople: Model.knownGuests(byDay)
   readonly property var invitePicks: Model.guestSuggestions(knownPeople, inviteField.text, [], 6)
   readonly property var guestPicks: Model.guestSuggestions(knownPeople, guestField.text, guestTaken(), 6)
+  // Rooms from meeting-links.txt. Empty when that file is missing or has
+  // no https link, so the form grows a menu only for someone who made one.
+  property string meetingLinksText: ""
+  readonly property string meetingLinksPath: {
+    var base = Quickshell.env("XDG_CONFIG_HOME")
+    if (!base) base = (Quickshell.env("HOME") || "") + "/.config"
+    return base + "/blacksheep.calendar/meeting-links.txt"
+  }
+  readonly property var roomPicks: {
+    var links = Model.parseMeetingLinks(meetingLinksText)
+    var out = []
+    for (var i = 0; i < links.length; i++) {
+      var link = links[i]
+      var named = link.name !== link.url
+      out.push({ name: link.name, detail: named ? link.url : "", email: link.url })
+    }
+    return out
+  }
+
+  property FileView meetingLinksFile: FileView {
+    path: editor.meetingLinksPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: editor.meetingLinksText = String(text() || "")
+    onLoadFailed: editor.meetingLinksText = ""
+    onFileChanged: reload()
+  }
 
   implicitHeight: form.implicitHeight
   // Where the Delete/Open/Join/Close row goes instead of the form's end.
@@ -311,6 +340,9 @@ Item {
     id: suggestList
     property string target: ""
     property var picks: []
+    // A guest row has to stay up for the click that picks it. A room list
+    // stays up on its own, so its click must not hold the guest list open.
+    property bool holdFocus: true
     signal picked(string email)
     width: parent.width
     spacing: Style.space(2)
@@ -363,8 +395,10 @@ Item {
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
           onPressed: function(mouse) {
-            editor.suggestTarget = suggestList.target
-            editor.suggestHeld = true
+            if (suggestList.holdFocus) {
+              editor.suggestTarget = suggestList.target
+              editor.suggestHeld = true
+            }
             suggestList.picked(suggestRow.modelData.email)
             mouse.accepted = true
           }
@@ -533,6 +567,19 @@ Item {
       visible: editor.editable || text !== ""
       width: parent.width
       placeholderText: "Location"
+    }
+
+    // Choosing a room writes its link into Location. Join still comes from
+    // that link once the event is saved. No rooms, and this row is absent.
+    SuggestList {
+      visible: editor.editable && editor.roomPicks.length > 0
+      holdFocus: false
+      picks: editor.roomPicks
+      onPicked: function(url) {
+        locationField.text = url
+        locationField.forceActiveFocus()
+        locationField.cursorPosition = locationField.text.length
+      }
     }
 
     // Typed on a new event, and sent as the invitation text. An existing
