@@ -169,6 +169,20 @@ ID. If the organisation requires admin consent, an admin has to grant it once.
   come from people already on your events. Nothing is sent until **Save**.
   From a terminal: `calendar-ctl guests <uid>`, and `calendar-ctl update <uid>
   --invite <email> --uninvite <email>`.
+- **Your meeting rooms.** Put them in
+  `~/.config/blacksheep.calendar/meeting-links.txt`, one a line: a name,
+  then the https link. Blank lines and lines starting with `#` are skipped.
+
+  ```
+  Work room  https://teams.microsoft.com/l/meetup-join/…
+  Mine       https://us02web.zoom.us/my/you
+  ```
+
+  While that file has a room in it, Location lists the names, and choosing
+  one fills in the link. Teams, Zoom, Meet, Webex and Proton Meet links
+  still get a Join button after the event is saved. With no file, the form
+  is unchanged. The file stays on this machine; saving an event sends only
+  the link you chose, as its location.
 - **Calendars:** click one in the list on the left to show or hide it. A
   hidden calendar isn't downloaded at all. `calendar-ctl choose` does the
   same in a checklist.

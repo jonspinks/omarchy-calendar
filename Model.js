@@ -1089,6 +1089,42 @@ if (typeof module !== "undefined") {
   }
 }
 
+// Personal rooms from ~/.config/blacksheep.calendar/meeting-links.txt.
+// One room a line: a name, then an https link. The name is everything
+// before the last https:// on the line, so it may contain spaces. Blank
+// lines and lines that start with # are skipped, and so is anything that
+// is not an https link. A handful of rooms is the point of the file, so
+// a huge one cannot fill the form.
+var MEETING_LINK_CAP = 12
+var MEETING_NAME_CAP = 80
+var MEETING_URL_CAP = 2000
+var MEETING_TEXT_CAP = 16000
+
+function parseMeetingLinks(text) {
+  var src = String(text || "")
+  if (src.length > MEETING_TEXT_CAP) src = src.slice(0, MEETING_TEXT_CAP)
+  var lines = src.split(/\r?\n/)
+  var out = []
+  for (var i = 0; i < lines.length && out.length < MEETING_LINK_CAP; i++) {
+    var line = lines[i].trim()
+    if (!line || line.charAt(0) === "#") continue
+    var at = line.toLowerCase().lastIndexOf("https://")
+    if (at < 0) continue
+    var url = ("https://" + line.slice(at + "https://".length)).split(/\s/)[0]
+    url = url.replace(/[.,;:!?)\]}'*"<>]+$/, "")
+    if (url.length <= "https://".length || url.length > MEETING_URL_CAP) continue
+    var seen = false
+    for (var j = 0; j < out.length; j++) if (out[j].url === url) seen = true
+    if (seen) continue
+    var name = line.slice(0, at).trim()
+    if (!name) name = url
+    if (name.length > MEETING_NAME_CAP)
+      name = name.slice(0, MEETING_NAME_CAP - 1).trim() + "…"
+    out.push({ name: name, url: url })
+  }
+  return out
+}
+
 // The notes to show, trimmed; "" when there is nothing but divider lines
 // (an invitation whose Teams block came through empty), so none are shown.
 function meetingNotes(text) {

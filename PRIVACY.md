@@ -42,6 +42,10 @@ points to) only, or to the CalDAV address you give it.
   Google or Microsoft app you signed in through, and a CalDAV account's
   address and user name) are kept in
   `~/.config/blacksheep.calendar/`, readable only by you.
+- **Meeting rooms** you write in
+  `~/.config/blacksheep.calendar/meeting-links.txt` stay in that file.
+  Choosing one puts its link in the event's location, which is saved with
+  the event, the same as typing the link yourself.
 - **A copy of your events** is kept in your user cache, readable only by you,
   so the calendar can show them instantly and work offline. It includes each
   event's guest list (names, email addresses and whether they've answered),
