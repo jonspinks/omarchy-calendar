@@ -437,10 +437,14 @@ function viewDays(view, anchorKey, weekStart, count) {
     var first = weekStartKey(anchorKey, weekStart)
     for (var i = 0; i < 7; i++) days.push(addDays(first, i))
   } else if (view === "workweek") {
-    // Monday to Friday of the week holding the anchor, whatever the week-start
-    // setting: a working week is a working week.
+    // Monday to Friday, whatever the week-start setting: a working week is a
+    // working week. Weekdays show their own week; a Saturday or Sunday shows
+    // the week ahead, since the one behind is over.
     var d = keyToDate(anchorKey)
-    var monday = addDays(anchorKey, -((d.getDay() + 6) % 7))
+    var dow = d.getDay()
+    var monday = dow === 6 ? addDays(anchorKey, 2)
+      : dow === 0 ? addDays(anchorKey, 1)
+      : addDays(anchorKey, 1 - dow)
     for (var j = 0; j < 5; j++) days.push(addDays(monday, j))
   }
   return days

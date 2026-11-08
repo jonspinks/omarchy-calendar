@@ -175,6 +175,15 @@ eq(snz.map(r => r.id), ["snooze:u1@" + Date.parse("2026-10-25T14:10:00Z")], "cla
 
 
 // The days view: the next few days from the selected one (#4).
+const ww = ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]
+eq(M.viewDays("workweek", "2026-11-11", 1), ww, "work week: a Wednesday shows its own week")
+eq(M.viewDays("workweek", "2026-11-09", 0), ww, "work week: a Monday, Sunday-start setting")
+eq(M.viewDays("workweek", "2026-11-13", 1), ww, "work week: a Friday shows its own week")
+eq(M.viewDays("workweek", "2026-11-08", 1), ww, "work week: a Sunday shows the week ahead")
+eq(M.viewDays("workweek", "2026-11-08", 0), ww, "work week: a Sunday shows the week ahead, Sunday-start too")
+eq(M.viewDays("workweek", "2026-11-07", 1), ww, "work week: a Saturday shows the week ahead")
+eq(M.viewDays("workweek", M.stepAnchor("workweek", "2026-11-08", 1), 1)[0], "2026-11-16", "work week: Next from a Sunday goes on a week")
+eq(M.viewDays("workweek", M.stepAnchor("workweek", "2026-11-08", -1), 1)[0], "2026-11-02", "work week: Previous from a Sunday goes back to last week")
 eq(M.viewDays("days", "2026-10-25", 1, 4), ["2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28"], "days: from the selected day, no past days")
 eq(M.viewDays("days", "2026-10-30", 1, 3), ["2026-10-30", "2026-10-31", "2026-11-01"], "days: across a month end")
 eq(M.viewDays("days", "2026-10-25", 1).length, 4, "days: four when unset")
