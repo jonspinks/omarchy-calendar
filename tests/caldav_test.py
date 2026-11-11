@@ -344,20 +344,22 @@ class Syncing(unittest.TestCase):
             return sync.sync_account(self.account, full, lambda *_: None)
 
     def test_ctag_unchanged_is_not_fetched(self):
-        one = ["BEGIN:VEVENT\nUID:u1\nDTSTART:20261003T120000Z\nDTEND:20261003T130000Z\nSUMMARY:One\nEND:VEVENT"]
-        st = self.run_sync("c1", one)
-        self.assertEqual((st["status"], self.reports), ("ok", 1))
-        self.assertEqual(list(st["events"]), ["F/work/u1"])
-        self.assertEqual(st["calendars"]["work"]["cursor"], "3:c1")
-        st = self.run_sync("c1", [])   # the server would say nothing is there: never asked
-        self.assertEqual((self.reports, list(st["events"])), (1, ["F/work/u1"]))
-        # A moved ctag refetches the calendar whole: what's gone is gone.
-        two = ["BEGIN:VEVENT\nUID:u2\nDTSTART:20261004T120000Z\nSUMMARY:Two\nEND:VEVENT"]
-        st = self.run_sync("c2", two)
-        self.assertEqual((self.reports, list(st["events"])), (2, ["F/work/u2"]))
-        self.assertEqual(st["calendars"]["work"]["cursor"], "3:c2")
-        st = self.run_sync("c2", two, full=True)   # --full always fetches
-        self.assertEqual(self.reports, 3)
+        # The events are in October 2026: pin today, or they fall out of the window.
+        with mock.patch.object(sync, "window_now", return_value=("2026-09-28", WINDOW)):
+            one = ["BEGIN:VEVENT\nUID:u1\nDTSTART:20261003T120000Z\nDTEND:20261003T130000Z\nSUMMARY:One\nEND:VEVENT"]
+            st = self.run_sync("c1", one)
+            self.assertEqual((st["status"], self.reports), ("ok", 1))
+            self.assertEqual(list(st["events"]), ["F/work/u1"])
+            self.assertEqual(st["calendars"]["work"]["cursor"], "3:c1")
+            st = self.run_sync("c1", [])   # the server would say nothing is there: never asked
+            self.assertEqual((self.reports, list(st["events"])), (1, ["F/work/u1"]))
+            # A moved ctag refetches the calendar whole: what's gone is gone.
+            two = ["BEGIN:VEVENT\nUID:u2\nDTSTART:20261004T120000Z\nSUMMARY:Two\nEND:VEVENT"]
+            st = self.run_sync("c2", two)
+            self.assertEqual((self.reports, list(st["events"])), (2, ["F/work/u2"]))
+            self.assertEqual(st["calendars"]["work"]["cursor"], "3:c2")
+            st = self.run_sync("c2", two, full=True)   # --full always fetches
+            self.assertEqual(self.reports, 3)
 
     def test_into_events_json(self):
         with mock.patch.object(sync, "window_now", return_value=("2026-09-28", WINDOW)):
