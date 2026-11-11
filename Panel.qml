@@ -4,6 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "Typing.js" as Typing
 
 // The clock's calendar popup: a month grid with ISO week numbers, built to
 // sit beside the weather panel — same hero-over-detail composition, same
@@ -877,8 +878,16 @@ Panel {
                   foreground: root.contentForeground
                   font.family: root.contentFontFamily
                   inputMethodHints: Qt.ImhDigitsOnly
+                  // Read-only to Qt, typed through Typing.js: a writable field
+                  // reads the clipboard by itself (see Typing.js). Digits only,
+                  // so paste is not offered here.
+                  readOnly: true
+                  cursorVisible: activeFocus
 
-                  Keys.onPressed: function(event) { root.handleLifeKey(event, expectancyField) }
+                  Keys.onPressed: function(event) {
+                    if (Typing.handle(bornField, event, true, false, null)) return
+                    root.handleLifeKey(event, expectancyField)
+                  }
                 }
 
                 Text {
@@ -900,8 +909,16 @@ Panel {
                   foreground: root.contentForeground
                   font.family: root.contentFontFamily
                   inputMethodHints: Qt.ImhDigitsOnly
+                  // Read-only to Qt, typed through Typing.js: a writable field
+                  // reads the clipboard by itself (see Typing.js). Digits only,
+                  // so paste is not offered here.
+                  readOnly: true
+                  cursorVisible: activeFocus
 
-                  Keys.onPressed: function(event) { root.handleLifeKey(event, bornField) }
+                  Keys.onPressed: function(event) {
+                    if (Typing.handle(expectancyField, event, true, false, null)) return
+                    root.handleLifeKey(event, bornField)
+                  }
                 }
               }
 

@@ -5,6 +5,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "Typing.js" as Typing
 
 // One event: new, editable, or someone else's invitation.
 //
@@ -345,11 +346,62 @@ Item {
     font.letterSpacing: 1
   }
 
+  // ---- Typing and paste. Every field stays readOnly, so Qt never reads the
+  //      clipboard on its own; Typing.js makes the edits, and paste asks
+  //      scripts/omcal/paste.py, which reads a few KB at most, within 1.5 s.
+  property var pasteTarget: null
+  property bool pasteMultiLine: false
+  readonly property string pasteScript: decodeURIComponent(Qt.resolvedUrl("scripts/omcal/paste.py").toString().replace(/^file:\/\//, ""))
+
+  function pasteInto(field, mode, multiLine) {
+    if (pasteProc.running) return
+    editor.pasteTarget = field
+    editor.pasteMultiLine = multiLine
+    pasteProc.command = mode === "primary" ? ["python3", "-B", editor.pasteScript, "--primary"]
+                                           : ["python3", "-B", editor.pasteScript]
+    pasteProc.running = true
+  }
+
+  // A key on one of the form's fields: typing first, then the field's own keys.
+  function typeKey(field, event, canEdit, multiLine) {
+    return Typing.handle(field, event, canEdit, multiLine, function(mode) {
+      editor.pasteInto(field, mode, multiLine)
+    })
+  }
+
+  // Middle-click pastes the primary selection, bounded the same way.
+  function middlePaste(field, point, canEdit, multiLine) {
+    if (!canEdit) return
+    field.forceActiveFocus()
+    field.cursorPosition = field.positionAt(point.x, point.y)
+    editor.pasteInto(field, "primary", multiLine)
+  }
+
+  Process {
+    id: pasteProc
+    stdout: StdioCollector { id: pasteOut; waitForEnd: true }
+    onExited: function(code) {
+      var field = editor.pasteTarget
+      editor.pasteTarget = null
+      if (code !== 0 || !field || !field.activeFocus || editor.saving) return
+      Typing.insert(field, pasteOut.text, editor.pasteMultiLine)
+    }
+  }
+
   component Field: TextField {
-    readOnly: !editor.editable || editor.saving
+    id: field
+    readonly property bool canEdit: editor.editable && !editor.saving
+    readOnly: true
+    cursorVisible: activeFocus && canEdit
     foreground: editor.foreground
     font.family: editor.fontFamily
-    Keys.onPressed: function(event) { editor.fieldKey(event) }
+    Keys.onPressed: function(event) {
+      if (!editor.typeKey(field, event, field.canEdit, false)) editor.fieldKey(event)
+    }
+    TapHandler {
+      acceptedButtons: Qt.MiddleButton
+      onTapped: function(point) { editor.middlePaste(field, point.position, field.canEdit, false) }
+    }
   }
 
   // People from other events matching the address being typed.
@@ -428,9 +480,13 @@ Item {
   // drops the form. Styled like Field; the kit has no multi-line input.
   component NotesInput: Controls.TextArea {
     id: notesInput
-    readOnly: editor.saving
+    readonly property bool canEdit: !editor.saving
+    readOnly: true
+    cursorVisible: activeFocus && canEdit
+    textFormat: TextEdit.PlainText
     wrapMode: TextEdit.Wrap
     selectByMouse: true
+    selectByKeyboard: true
     placeholderText: "Agenda, a link, anything the invitation should say"
     font.family: editor.fontFamily
     font.pixelSize: Style.font.body
@@ -453,10 +509,15 @@ Item {
       radius: Style.cornerRadius
     }
     Keys.onPressed: function(event) {
+      if (editor.typeKey(notesInput, event, notesInput.canEdit, true)) return
       if (event.key === Qt.Key_Escape) {
         editor.cancel()
         event.accepted = true
       }
+    }
+    TapHandler {
+      acceptedButtons: Qt.MiddleButton
+      onTapped: function(point) { editor.middlePaste(notesInput, point.position, notesInput.canEdit, true) }
     }
   }
 
@@ -821,16 +882,23 @@ Item {
         // A plain TextField, not Field: Enter here adds, where Field's saves.
         TextField {
           id: guestField
+          readonly property bool canEdit: !editor.saving
           anchors.left: parent.left
           anchors.right: addButton.left
           anchors.rightMargin: Style.space(6)
-          readOnly: editor.saving
+          readOnly: true
+          cursorVisible: activeFocus && canEdit
           foreground: editor.foreground
           font.family: editor.fontFamily
           placeholderText: "Add guests: a name or an email"
           onTextChanged: editor.guestError = ""
           onActiveFocusChanged: editor.suggestFocus("guest", activeFocus)
+          TapHandler {
+            acceptedButtons: Qt.MiddleButton
+            onTapped: function(point) { editor.middlePaste(guestField, point.position, guestField.canEdit, false) }
+          }
           Keys.onPressed: function(event) {
+            if (editor.typeKey(guestField, event, guestField.canEdit, false)) return
             if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && text.trim() !== "") {
               var frag = Model.guestQuery(text)
               if (editor.guestSuggestOpen && editor.guestPicks.length && !Model.isEmail(frag)) {
@@ -885,14 +953,21 @@ Item {
     // is listed, and otherwise saves. Field's own Enter always saves.
     TextField {
       id: inviteField
+      readonly property bool canEdit: editor.editable && !editor.saving
       visible: editor.creating
       width: parent.width
-      readOnly: !editor.editable || editor.saving
+      readOnly: true
+      cursorVisible: activeFocus && canEdit
       foreground: editor.foreground
       font.family: editor.fontFamily
       placeholderText: "Invite: a name or an email, separated by commas"
       onActiveFocusChanged: editor.suggestFocus("invite", activeFocus)
+      TapHandler {
+        acceptedButtons: Qt.MiddleButton
+        onTapped: function(point) { editor.middlePaste(inviteField, point.position, inviteField.canEdit, false) }
+      }
       Keys.onPressed: function(event) {
+        if (editor.typeKey(inviteField, event, inviteField.canEdit, false)) return
         if (event.key === Qt.Key_Escape) {
           editor.cancel()
           event.accepted = true

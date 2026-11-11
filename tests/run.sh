@@ -11,4 +11,5 @@ trap 'rm -rf "$scratch"' EXIT
 export XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" XDG_RUNTIME_DIR="$scratch/run"
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 TZ=America/Toronto node tests/model.test.js
+node tests/typing.test.js
 python3 -B -m unittest discover -s tests -p '*_test.py'
