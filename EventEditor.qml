@@ -58,6 +58,8 @@ Item {
   property string calendarRef: ""
   // The date popup follows the calendar's week and marks busy days on it.
   property string todayKey: ""
+  // 24-hour clock unless the clock format asks for am/pm.
+  property bool use24h: true
   property int weekStart: 1
   property var byDay: ({})
   property bool confirmingDelete: false
@@ -135,6 +137,8 @@ Item {
   function load() {
     dateField.close()
     endDateField.close()
+    fromField.close()
+    toField.close()
     if (!draft) return
     titleField.text = draft.title
     locationField.text = draft.location
@@ -143,6 +147,7 @@ Item {
     endDateField.date = draft.endDate
     fromField.text = draft.from
     toField.text = draft.to
+    editor.startWas = { date: draft.date, from: draft.from }
     editor.allDay = draft.allDay
     editor.busy = draft.busy !== false
     editor.busyTouched = !editor.creating
@@ -165,6 +170,18 @@ Item {
     })
   }
   onDraftChanged: load()
+
+  // Where the start was before the last change, so a new start day or time
+  // can carry the end with it and keep the event's length.
+  property var startWas: ({ date: "", from: "" })
+  function moveStart(newDate, newFrom) {
+    var before = { allDay: editor.allDay, date: startWas.date, endDate: endDateField.date,
+                   from: startWas.from, to: toField.text }
+    var moved = Model.moveStart(before, newDate, newFrom)
+    endDateField.date = moved.endDate
+    if (!editor.allDay) toField.text = moved.to
+    startWas = { date: newDate, from: newFrom }
+  }
 
   function collect() {
     var d = {}
@@ -540,9 +557,22 @@ Item {
         popupBackground: editor.themePopupBg
         popupBorder: editor.themePopupEdge
         fontFamily: editor.fontFamily
-        onPopupOpened: endDateField.close()
+        onPopupOpened: { endDateField.close(); fromField.close(); toField.close() }
+        onPicked: function(key) { editor.moveStart(key, fromField.text) }
       }
-      Field { id: fromField; visible: !editor.allDay; width: Style.space(90); placeholderText: "14:30" }
+      TimeField {
+        id: fromField
+        visible: !editor.allDay
+        readOnly: !editor.editable || editor.saving
+        use24h: editor.use24h
+        foreground: editor.foreground
+        accent: editor.themeAccent
+        popupBackground: editor.themePopupBg
+        popupBorder: editor.themePopupEdge
+        fontFamily: editor.fontFamily
+        onPopupOpened: { dateField.close(); endDateField.close(); toField.close() }
+        onPicked: function(value) { editor.moveStart(dateField.date, value) }
+      }
 
       Caption { text: editor.allDay ? "LAST DAY" : "ENDS"; width: editor.labelWidth }
       DateField {
@@ -557,9 +587,22 @@ Item {
         popupBackground: editor.themePopupBg
         popupBorder: editor.themePopupEdge
         fontFamily: editor.fontFamily
-        onPopupOpened: dateField.close()
+        onPopupOpened: { dateField.close(); fromField.close(); toField.close() }
       }
-      Field { id: toField; visible: !editor.allDay; width: Style.space(90); placeholderText: "15:30" }
+      TimeField {
+        id: toField
+        visible: !editor.allDay
+        readOnly: !editor.editable || editor.saving
+        use24h: editor.use24h
+        // Lengths beside each choice while the event ends on its first day.
+        since: endDateField.date === dateField.date ? fromField.minutes : -1
+        foreground: editor.foreground
+        accent: editor.themeAccent
+        popupBackground: editor.themePopupBg
+        popupBorder: editor.themePopupEdge
+        fontFamily: editor.fontFamily
+        onPopupOpened: { dateField.close(); endDateField.close(); fromField.close() }
+      }
     }
 
     Field {

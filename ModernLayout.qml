@@ -487,6 +487,7 @@ Item {
         event: layout.p ? layout.p.draftEvent : null
         calendars: layout.p ? layout.p.editableCalendars : []
         todayKey: layout.p ? layout.p.todayKey : ""
+        use24h: layout.p ? layout.p.use24h : true
         weekStart: layout.p ? layout.p.weekStart : 1
         byDay: layout.p ? layout.p.eventIndex.byDay : ({})
         saving: layout.p ? layout.p.writingUid !== "" : false

@@ -733,6 +733,70 @@ function clockInput(minutes) {
 
 function minutesOf(date) { return date.getHours() * 60 + date.getMinutes() }
 
+// ---- The time picker. Times are offered every 15 minutes; a time that is
+//      already set off that step (09:10) is kept and listed in its place.
+
+function timeSlots(step, keep) {
+  var every = step > 0 ? step : 15
+  var out = []
+  for (var m = 0; m < 24 * 60; m += every) out.push(m)
+  if (keep >= 0 && keep < 24 * 60 && out.indexOf(keep) < 0) {
+    out.push(keep)
+    out.sort(function(a, b) { return a - b })
+  }
+  return out
+}
+
+function clockText(minutes, use24h) {
+  if (!(minutes >= 0)) return ""
+  var h = Math.floor(minutes / 60) % 24, m = minutes % 60
+  if (use24h) return pad(h) + ":" + pad(m)
+  return (h % 12 === 0 ? 12 : h % 12) + ":" + pad(m) + (h < 12 ? " am" : " pm")
+}
+
+// "30 min", "1 h", "1.5 h", "2 h 20 min", "1 day".
+function lengthLabel(minutes) {
+  if (!(minutes > 0)) return ""
+  if (minutes < 60) return minutes + " min"
+  if (minutes % (24 * 60) === 0) return (minutes / 1440) + (minutes === 1440 ? " day" : " days")
+  if (minutes % 30 === 0) return (minutes / 60) + " h"
+  return Math.floor(minutes / 60) + " h " + (minutes % 60) + " min"
+}
+
+// Minutes from a draft's start to its end, read the way draftArgs reads them
+// (an end at or before the start on the same day runs past midnight). -1 when
+// a field doesn't parse.
+function draftLength(d) {
+  var date = parseDateText(d.date), endDate = parseDateText(d.endDate || d.date)
+  var f = parseClock(d.from), t = parseClock(d.to)
+  if (!date || !endDate || f < 0 || t < 0) return -1
+  if (endDate === date && t <= f) endDate = addDays(date, 1)
+  var ms = keyToDate(endDate).getTime() + t * 60000 - (keyToDate(date).getTime() + f * 60000)
+  var mins = Math.round(ms / 60000)
+  return mins > 0 ? mins : -1
+}
+
+// Moving the start keeps the length, as in Outlook: { date, endDate, from, to }
+// for a new start day and time. An all-day event moves by whole days. When the
+// old length can't be read, the end is put an hour after the new start.
+function moveStart(d, newDate, newFrom) {
+  var date = parseDateText(newDate) || parseDateText(d.date)
+  if (d.allDay) {
+    var first = parseDateText(d.date), last = parseDateText(d.endDate || d.date)
+    var days = first && last && last >= first
+      ? Math.round((keyToDate(last).getTime() - keyToDate(first).getTime()) / 86400000) : 0
+    return { date: date, endDate: addDays(date, days), from: d.from, to: d.to }
+  }
+  var length = draftLength(d)
+  if (length < 0) length = 60
+  var f = parseClock(newFrom)
+  if (f < 0) f = parseClock(d.from)
+  if (f < 0) f = 9 * 60
+  var end = f + length
+  return { date: date, endDate: addDays(date, Math.floor(end / 1440)),
+           from: clockInput(f), to: clockInput(end % 1440) }
+}
+
 // A draft from an agenda/grid row (see indexEvents).
 function eventDraft(ev) {
   var d = {

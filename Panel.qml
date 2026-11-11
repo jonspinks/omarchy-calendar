@@ -1029,6 +1029,7 @@ Panel {
             showGuests: false
             calendars: root.editableCalendars
             todayKey: root.todayKey
+            use24h: root.use24h
             weekStart: root.weekStart
             byDay: root.eventIndex.byDay
             saving: root.writingUid !== ""

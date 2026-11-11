@@ -8,7 +8,7 @@ const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, 
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
   " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes," +
   " draftSnapshot, draftUnchanged, VIEWS, knownGuests, guestSuggestions, guestQuery, applyGuestPick, slotStart," +
-  " parseMeetingLinks }")()
+  " parseMeetingLinks, timeSlots, clockText, lengthLabel, draftLength, moveStart }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -302,6 +302,22 @@ eq(M.parseMeetingLinks(many.join("\n")).length, 12, "rooms: twelve is enough")
 eq(M.parseMeetingLinks("A".repeat(90) + " https://meet.example/room")[0].name,
    "A".repeat(79) + "…", "rooms: a long name is shortened")
 eq(M.parseMeetingLinks("x".repeat(17000) + "\nKept https://meet.example/kept"), [], "rooms: text past the cap is not read")
+
+// The time picker and moving an event's start.
+eq([M.timeSlots(15).length, M.timeSlots(15)[1], M.timeSlots(15, 550).indexOf(550), M.timeSlots(15, 540).length], [96, 15, 37, 96], "timeSlots: 15-minute steps, keeps an odd time")
+eq([M.clockText(870, true), M.clockText(870, false), M.clockText(0, false), M.clockText(720, false), M.clockText(-1, true)], ["14:30", "2:30 pm", "12:00 am", "12:00 pm", ""], "clockText")
+eq([30, 60, 90, 140, 1440, 2880].map(M.lengthLabel), ["30 min", "1 h", "1.5 h", "2 h 20 min", "1 day", "2 days"], "lengthLabel")
+const moveEv = { allDay: false, date: "2026-11-12", endDate: "2026-11-12", from: "09:00", to: "10:30" }
+eq(M.draftLength(moveEv), 90, "draftLength")
+eq(M.draftLength({ allDay: false, date: "2026-11-12", endDate: "2026-11-12", from: "23:00", to: "00:30" }), 90, "draftLength: past midnight")
+eq(M.moveStart(moveEv, "2026-11-12", "14:00"), { date: "2026-11-12", endDate: "2026-11-12", from: "14:00", to: "15:30" }, "moveStart: new time keeps the length")
+eq(M.moveStart(moveEv, "2026-11-20", "09:00"), { date: "2026-11-20", endDate: "2026-11-20", from: "09:00", to: "10:30" }, "moveStart: new day moves the end day too")
+eq(M.moveStart(moveEv, "2026-11-12", "23:30"), { date: "2026-11-12", endDate: "2026-11-13", from: "23:30", to: "01:00" }, "moveStart: runs past midnight")
+eq(M.moveStart({ allDay: false, date: "2026-11-12", endDate: "2026-11-14", from: "09:00", to: "17:00" }, "2026-11-20", "09:00"),
+   { date: "2026-11-20", endDate: "2026-11-22", from: "09:00", to: "17:00" }, "moveStart: a multi-day event keeps its days")
+eq(M.moveStart({ allDay: true, date: "2026-11-12", endDate: "2026-11-13", from: "09:00", to: "10:00" }, "2026-12-01", ""),
+   { date: "2026-12-01", endDate: "2026-12-02", from: "09:00", to: "10:00" }, "moveStart: all-day moves by whole days")
+eq(M.moveStart({ allDay: false, date: "2026-11-12", endDate: "2026-11-12", from: "09:00", to: "x" }, "2026-11-12", "10:00").to, "11:00", "moveStart: unreadable end -> an hour")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")
