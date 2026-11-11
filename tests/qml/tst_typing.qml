@@ -45,8 +45,7 @@ Item {
       line.text = ""
       notes.text = ""
       root.pasteMode = ""
-      Typing.forget(line)
-      Typing.forget(notes)
+      Typing.forget([line, notes])
     }
 
     function test_typing_and_deleting() {

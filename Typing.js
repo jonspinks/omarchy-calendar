@@ -110,10 +110,14 @@ function apply(state, ev, multiLine) {
 
 var history = new WeakMap()
 
+// A field's undo and redo. They hold only edits made here, to the text the
+// field has now: if anything else replaced its text since (a new draft
+// loaded into the same field, a picked guest, a room link), the old steps
+// belong to other text, maybe another event's, and are dropped.
 function stacks(field) {
   var h = history.get(field)
-  if (!h) {
-    h = { undo: [], redo: [] }
+  if (!h || h.text !== String(field.text)) {
+    h = { undo: [], redo: [], text: String(field.text) }
     history.set(field, h)
   }
   return h
@@ -132,8 +136,10 @@ function remember(field) {
 }
 
 function set(field, text, cursor) {
+  var h = stacks(field)
   field.text = text
   field.cursorPosition = Math.max(0, Math.min(cursor, text.length))
+  h.text = String(field.text)
 }
 
 // Insert text the helper read, where the cursor is now.
@@ -171,7 +177,9 @@ function handle(field, event, canEdit, multiLine, paste) {
   return true
 }
 
-// The text was replaced from outside (a new draft): old undo steps no longer apply.
-function forget(field) {
-  history.delete(field)
+// A new draft in the same fields: nothing typed for the last one may be
+// undone into this one. The editor calls this from load(), even when the
+// text happens to be the same.
+function forget(fields) {
+  for (var i = 0; i < fields.length; i++) history.delete(fields[i])
 }

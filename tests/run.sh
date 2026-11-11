@@ -14,5 +14,16 @@ TZ=America/Toronto node tests/model.test.js
 node tests/typing.test.js
 # Real key events on read-only native fields, as the editor wires them.
 qmltest=/usr/lib/qt6/bin/qmltestrunner
-if [[ -x $qmltest ]]; then QT_QPA_PLATFORM=offscreen "$qmltest" -input tests/qml; else echo "skip: no qmltestrunner (qt6-declarative)"; fi
+if [[ -x $qmltest ]]; then
+  QT_QPA_PLATFORM=offscreen "$qmltest" -silent -input tests/qml/tst_typing.qml
+  # The real EventEditor.qml, reused from one draft to the next, against
+  # stand-ins for the shell's modules generated from the installed shell.
+  if python3 -B tests/qml/make_stubs.py "$scratch/qml"; then
+    QT_QPA_PLATFORM=offscreen "$qmltest" -silent -import "$scratch/qml" -input tests/qml/editor
+  else
+    echo "skip: the editor test needs the Omarchy shell installed"
+  fi
+else
+  echo "skip: no qmltestrunner (qt6-declarative)"
+fi
 python3 -B -m unittest discover -s tests -p '*_test.py'

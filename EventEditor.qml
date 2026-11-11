@@ -135,7 +135,14 @@ Item {
     return Math.max(least, fitHeight - used - form.spacing * shown - Style.space(16))
   }
 
+  // Which draft the fields hold. A new one drops the fields' undo history,
+  // and a paste that was asked for under an older one is thrown away.
+  property int draftGeneration: 0
+  property int pasteGeneration: -1
+
   function load() {
+    editor.draftGeneration++
+    Typing.forget([titleField, locationField, inviteField, guestField, notesField])
     dateField.close()
     endDateField.close()
     fromField.close()
@@ -357,6 +364,7 @@ Item {
     if (pasteProc.running) return
     editor.pasteTarget = field
     editor.pasteMultiLine = multiLine
+    editor.pasteGeneration = editor.draftGeneration
     pasteProc.command = mode === "primary" ? ["python3", "-B", editor.pasteScript, "--primary"]
                                            : ["python3", "-B", editor.pasteScript]
     pasteProc.running = true
@@ -379,10 +387,13 @@ Item {
 
   Process {
     id: pasteProc
+    objectName: "pasteProc"
     stdout: StdioCollector { id: pasteOut; waitForEnd: true }
     onExited: function(code) {
       var field = editor.pasteTarget
       editor.pasteTarget = null
+      // Asked for under another draft: the field now holds a different event.
+      if (editor.pasteGeneration !== editor.draftGeneration) return
       if (code !== 0 || !field || !field.activeFocus || editor.saving) return
       Typing.insert(field, pasteOut.text, editor.pasteMultiLine)
     }
@@ -534,6 +545,7 @@ Item {
 
     Field {
       id: titleField
+      objectName: "titleField"
       width: parent.width
       placeholderText: "Title"
       font.pixelSize: Style.font.subtitle
@@ -668,6 +680,7 @@ Item {
 
     Field {
       id: locationField
+      objectName: "locationField"
       visible: editor.editable || text !== ""
       width: parent.width
       placeholderText: "Location"
@@ -695,6 +708,7 @@ Item {
     }
     NotesInput {
       id: notesField
+      objectName: "notesField"
       visible: editor.creating
       width: parent.width
     }
@@ -882,6 +896,7 @@ Item {
         // A plain TextField, not Field: Enter here adds, where Field's saves.
         TextField {
           id: guestField
+          objectName: "guestField"
           readonly property bool canEdit: !editor.saving
           anchors.left: parent.left
           anchors.right: addButton.left
@@ -953,6 +968,7 @@ Item {
     // is listed, and otherwise saves. Field's own Enter always saves.
     TextField {
       id: inviteField
+      objectName: "inviteField"
       readonly property bool canEdit: editor.editable && !editor.saving
       visible: editor.creating
       width: parent.width
