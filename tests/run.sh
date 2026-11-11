@@ -12,4 +12,7 @@ export XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" XDG_RUN
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 TZ=America/Toronto node tests/model.test.js
 node tests/typing.test.js
+# Real key events on read-only native fields, as the editor wires them.
+qmltest=/usr/lib/qt6/bin/qmltestrunner
+if [[ -x $qmltest ]]; then QT_QPA_PLATFORM=offscreen "$qmltest" -input tests/qml; else echo "skip: no qmltestrunner (qt6-declarative)"; fi
 python3 -B -m unittest discover -s tests -p '*_test.py'
