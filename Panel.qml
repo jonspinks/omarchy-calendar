@@ -214,6 +214,18 @@ Panel {
     root.runWrite(ev.uid, ["respond", ev.uid, answer].concat(series ? ["--series"] : []))
   }
 
+  // A block dragged in the hour grid: only its times change.
+  function moveEvent(ev, startMs, endMs) {
+    var out = Model.dragArgs(ev, startMs, endMs)
+    if (out.error) {
+      failProc.command = ["omarchy-notification-send", "-g", "󰃭", "-u", "normal", "--app-name", "Datebook",
+                          "Calendar: not moved", out.error]
+      failProc.running = true
+      return
+    }
+    root.runWrite(ev.uid, out.args)
+  }
+
   // A write from the editor closes it when it lands; a failure is said in the
   // editor if it is open, and in a notification otherwise.
   function runWrite(uid, args) {
@@ -1079,6 +1091,8 @@ Panel {
             onJoinEvent: function(url) { root.openUrl(url) }
             onPickDay: function(key) { root.openDay(key) }
             onCreateAt: function(dayKey, minutes) { root.newEvent(dayKey, minutes) }
+            writingUid: root.writingUid
+            onMoveEvent: function(ev, startMs, endMs) { root.moveEvent(ev, startMs, endMs) }
           }
 
           // ---- The year.

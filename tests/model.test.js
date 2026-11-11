@@ -8,7 +8,7 @@ const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, 
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
   " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes," +
   " draftSnapshot, draftUnchanged, VIEWS, knownGuests, guestSuggestions, guestQuery, applyGuestPick, slotStart," +
-  " parseMeetingLinks, timeSlots, clockText, lengthLabel, draftLength, moveStart }")()
+  " parseMeetingLinks, timeSlots, clockText, lengthLabel, draftLength, moveStart, draggable, dragTimes, dragArgs }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -318,6 +318,29 @@ eq(M.moveStart({ allDay: false, date: "2026-11-12", endDate: "2026-11-14", from:
 eq(M.moveStart({ allDay: true, date: "2026-11-12", endDate: "2026-11-13", from: "09:00", to: "10:00" }, "2026-12-01", ""),
    { date: "2026-12-01", endDate: "2026-12-02", from: "09:00", to: "10:00" }, "moveStart: all-day moves by whole days")
 eq(M.moveStart({ allDay: false, date: "2026-11-12", endDate: "2026-11-12", from: "09:00", to: "x" }, "2026-11-12", "10:00").to, "11:00", "moveStart: unreadable end -> an hour")
+
+// Dragging in the hour grid.
+const when = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h, mi).getTime()
+const hhmm = (ms) => { const x = new Date(ms); return x.getDate() + " " + String(x.getHours()).padStart(2, "0") + ":" + String(x.getMinutes()).padStart(2, "0") }
+let dt = M.dragTimes(when(2026, 11, 12, 9, 0), when(2026, 11, 12, 10, 30), 67, 0, "move")
+eq([hhmm(dt.start), hhmm(dt.end)], ["12 10:00", "12 11:30"], "dragTimes: move snaps the start, keeps the length")
+dt = M.dragTimes(when(2026, 11, 12, 9, 0), when(2026, 11, 12, 10, 0), 0, 2, "move")
+eq([hhmm(dt.start), hhmm(dt.end)], ["14 09:00", "14 10:00"], "dragTimes: across columns moves whole days")
+dt = M.dragTimes(when(2026, 10, 31, 9, 0), when(2026, 10, 31, 10, 0), 0, 1, "move")
+eq([hhmm(dt.start), hhmm(dt.end)], ["1 09:00", "1 10:00"], "dragTimes: a day across the clock change stays 9:00")
+dt = M.dragTimes(when(2026, 11, 12, 9, 0), when(2026, 11, 12, 10, 0), -80, 0, "resize")
+eq([hhmm(dt.start), hhmm(dt.end)], ["12 09:00", "12 09:15"], "dragTimes: resize never below 15 minutes")
+dt = M.dragTimes(when(2026, 11, 12, 9, 0), when(2026, 11, 12, 10, 0), 55, 0, "resize")
+eq(hhmm(dt.end), "12 11:00", "dragTimes: resize snaps the end")
+eq([M.draggable({ editable: true, organizer: true }), M.draggable({ editable: true, organizer: false }),
+    M.draggable({ editable: false, organizer: true }), M.draggable({ editable: true, organizer: true, allDay: true })],
+   [true, false, false, false], "draggable: your own timed events only")
+const dragEv = { uid: "Google/c/abc", account: "Google", calendar: "c", title: "Standup", location: "",
+                 start: "2026-11-12T09:00:00-05:00", end: "2026-11-12T09:30:00-05:00", busy: true, guests: [] }
+eq(M.dragArgs(dragEv, when(2026, 11, 13, 14, 0), when(2026, 11, 13, 14, 30)).args,
+   ["update", "Google/c/abc", "--start", "2026-11-13 14:00", "--end", "2026-11-13 14:30", "--timed"], "dragArgs: update with the new times only")
+eq(M.dragArgs(dragEv, when(2026, 11, 12, 23, 30), when(2026, 11, 13, 0, 0)).args.slice(2, 6),
+   ["--start", "2026-11-12 23:30", "--end", "2026-11-13 00:00"], "dragArgs: ending at midnight")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

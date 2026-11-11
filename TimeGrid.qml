@@ -24,6 +24,32 @@ Item {
   signal joinEvent(string url)
   signal pickDay(string key)
   signal createAt(string dayKey, int minutes)
+  // A block dropped at new times (ms). The panel writes it.
+  signal moveEvent(var ev, real startMs, real endMs)
+
+  // The event being written, so a dropped block stays put until it lands.
+  property string writingUid: ""
+
+  // ---- Dragging. One block at a time: it says where the pointer is in the
+  //      scroller's viewport, and the timer scrolls when that is near an edge.
+  property var dragBlock: null
+  property real dragViewY: 0
+  Timer {
+    interval: 40
+    repeat: true
+    running: grid.dragBlock !== null
+    onTriggered: {
+      var edge = grid.hourHeight / 2
+      var step = 0
+      if (grid.dragViewY < edge) step = -grid.hourHeight / 4
+      else if (grid.dragViewY > scroller.height - edge) step = grid.hourHeight / 4
+      if (!step) return
+      var next = Math.max(0, Math.min(scroller.contentHeight - scroller.height, scroller.contentY + step))
+      if (next === scroller.contentY) return
+      scroller.contentY = next
+      grid.dragBlock.follow()
+    }
+  }
 
   // The all-day events a "+n more" click is naming. The strip keeps the
   // first two; this is the rest, in the day's own order.
@@ -298,6 +324,7 @@ Item {
     onContentHeightChanged: scrollToNow()
 
     Item {
+      id: content
       width: scroller.width
       height: scroller.contentHeight
 
@@ -380,12 +407,91 @@ Item {
               required property var modelData
               readonly property var ev: modelData.event
               readonly property real slot: (dayCol.width - Style.space(4)) / modelData.columns
-              x: Style.space(2) + modelData.column * slot
-              y: (modelData.top - grid.hours.first * 60) / 60 * grid.hourHeight + 1
-              width: slot - Style.space(2)
-              height: Math.max(Style.space(16), (modelData.bottom - modelData.top) / 60 * grid.hourHeight - 2)
+              readonly property real startMs: new Date(ev.start).getTime()
+              readonly property real endMs: new Date(ev.end).getTime()
+              // A block moves from the day its event starts on, and stretches
+              // on the day it ends on; a middle day of a long event does neither.
+              readonly property bool canMove: Model.draggable(ev) && Model.keyForDate(new Date(startMs)) === dayCol.modelData
+              readonly property bool canResize: Model.draggable(ev) && modelData.bottom === (endMs - Model.keyToDate(dayCol.modelData).getTime()) / 60000
+
+              // "", "move" or "resize" while the pointer is down and has moved.
+              property string dragMode: ""
+              property real pressX: 0
+              property real pressY: 0
+              property real viewX: 0
+              property real viewY: 0
+              property int dragDays: 0
+              property var preview: null
+              property bool held: false
+              property bool justDragged: false
+              readonly property bool lifted: (dragMode !== "" || held) && preview !== null
+              readonly property string previewDay: grid.days[Math.max(0, Math.min(grid.days.length - 1, dayCol.index + dragDays))] || dayCol.modelData
+              readonly property real previewTop: lifted ? (preview.start - Model.keyToDate(previewDay).getTime()) / 60000 : modelData.top
+              readonly property real previewBottom: lifted ? previewTop + (preview.end - preview.start) / 60000 : modelData.bottom
+
+              function press(mode, mouse, from) {
+                var p = from.mapToItem(scroller, mouse.x, mouse.y)
+                pressX = p.x
+                pressY = p.y + scroller.contentY
+                viewX = p.x
+                viewY = p.y
+                dragMode = ""
+                justDragged = false
+                pendingMode = mode
+              }
+              property string pendingMode: ""
+              function moveTo(mouse, from) {
+                var p = from.mapToItem(scroller, mouse.x, mouse.y)
+                viewX = p.x
+                viewY = p.y
+                if (dragMode === "") {
+                  if (Math.abs(p.x - pressX) + Math.abs(p.y + scroller.contentY - pressY) < Style.space(6)) return
+                  dragMode = pendingMode
+                  grid.dragBlock = block
+                }
+                follow()
+              }
+              // Where the pointer now is, as times. Also run by the scroll timer.
+              function follow() {
+                if (dragMode === "") return
+                grid.dragViewY = viewY
+                var dy = viewY + scroller.contentY - pressY
+                var days = 0
+                if (dragMode === "move" && grid.colWidth > 0) {
+                  days = Math.round((viewX - pressX) / grid.colWidth)
+                  days = Math.max(-dayCol.index, Math.min(grid.days.length - 1 - dayCol.index, days))
+                }
+                dragDays = days
+                preview = Model.dragTimes(startMs, endMs, dy / grid.hourHeight * 60, days, dragMode)
+              }
+              function drop() {
+                if (dragMode === "") return
+                grid.dragBlock = null
+                justDragged = true
+                var p = preview
+                dragMode = ""
+                if (!p || (p.start === startMs && p.end === endMs)) { preview = null; return }
+                held = true
+                grid.moveEvent(ev, p.start, p.end)
+                // A write already running refuses this one: let the block go back.
+                Qt.callLater(function() { if (grid.writingUid !== block.ev.uid) block.release() })
+              }
+              function release() { held = false; preview = null; dragDays = 0 }
+              readonly property bool writing: grid.writingUid === ev.uid
+              onWritingChanged: if (!writing && held) settle.restart()
+              // The write patches events.json; give the reload a moment before
+              // letting go, so the block doesn't jump back and forward again.
+              Timer { id: settle; interval: 1500; onTriggered: block.release() }
+
+              x: lifted ? Style.space(2) + dragDays * grid.colWidth : Style.space(2) + modelData.column * slot
+              y: (previewTop - grid.hours.first * 60) / 60 * grid.hourHeight + 1
+              z: lifted ? 10 : 0
+              width: lifted ? dayCol.width - Style.space(4) : slot - Style.space(2)
+              height: Math.max(Style.space(16), (previewBottom - previewTop) / 60 * grid.hourHeight - 2)
               radius: Style.cornerRadius
-              color: Qt.rgba(Qt.color(ev.color).r, Qt.color(ev.color).g, Qt.color(ev.color).b, blockMouse.containsMouse ? 0.42 : 0.28)
+              color: Qt.rgba(Qt.color(ev.color).r, Qt.color(ev.color).g, Qt.color(ev.color).b, (blockMouse.containsMouse || lifted) ? 0.42 : 0.28)
+              border.width: lifted ? Style.normalBorderWidth : 0
+              border.color: ev.color
               opacity: ev.declined ? 0.45 : 1
               clip: true
 
@@ -412,23 +518,53 @@ Item {
                   font.strikeout: block.ev.declined
                 }
                 Text {
-                  visible: block.height > Style.space(32)
+                  visible: block.height > Style.space(32) || block.lifted
                   width: parent.width
                   textFormat: Text.PlainText
                   elide: Text.ElideRight
-                  text: block.ev.label
+                  text: block.lifted
+                        ? Model.clockText(Model.minutesOf(new Date(block.preview.start)), grid.use24h) + " – "
+                          + Model.clockText(Model.minutesOf(new Date(block.preview.end)), grid.use24h)
+                        : block.ev.label
                   color: Qt.darker(grid.foreground, 1.4)
                   font.family: grid.fontFamily
                   font.pixelSize: Style.font.caption
                 }
               }
 
+              // Click opens it; your own events also drag to a new time or day.
+              // Holding the press keeps the grid from scrolling under it.
               MouseArea {
                 id: blockMouse
                 anchors.fill: parent
                 hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: grid.openEvent(block.ev)
+                preventStealing: block.canMove
+                cursorShape: block.dragMode === "move" ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                onPressed: function(mouse) { if (block.canMove) block.press("move", mouse, blockMouse) }
+                onPositionChanged: function(mouse) { if (pressed && block.canMove) block.moveTo(mouse, blockMouse) }
+                onReleased: block.drop()
+                onCanceled: { grid.dragBlock = null; block.dragMode = ""; block.preview = null }
+                onClicked: {
+                  if (block.justDragged) { block.justDragged = false; return }
+                  grid.openEvent(block.ev)
+                }
+              }
+
+              // The bottom edge stretches the end.
+              MouseArea {
+                id: resizeMouse
+                visible: block.canResize && block.height > Style.space(20)
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: Style.space(6)
+                hoverEnabled: true
+                preventStealing: true
+                cursorShape: Qt.SizeVerCursor
+                onPressed: function(mouse) { block.press("resize", mouse, resizeMouse) }
+                onPositionChanged: function(mouse) { if (pressed) block.moveTo(mouse, resizeMouse) }
+                onReleased: block.drop()
+                onCanceled: { grid.dragBlock = null; block.dragMode = ""; block.preview = null }
               }
 
               Text {

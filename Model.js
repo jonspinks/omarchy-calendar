@@ -817,6 +817,41 @@ function eventDraft(ev) {
   return d
 }
 
+// ---- Dragging in the hour grid. A block moves by whole days across columns
+//      and by 15-minute steps down them; its bottom edge stretches the end.
+
+// Only events you organise on a calendar you can write to: an invitation's
+// time is the organiser's to change.
+function draggable(ev) {
+  return !!ev && !ev.allDay && !!ev.editable && !!ev.organizer
+}
+
+var SNAP = 15 * 60000
+
+// { start, end } in ms after a drag of `minutes` down and `days` across.
+// "move" keeps the length and lands the start on a 15-minute step; "resize"
+// moves only the end, never to less than 15 minutes after the start.
+function dragTimes(startMs, endMs, minutes, days, mode) {
+  if (mode === "resize") {
+    var end = Math.round((endMs + minutes * 60000) / SNAP) * SNAP
+    return { start: startMs, end: Math.max(startMs + SNAP, end) }
+  }
+  var moved = new Date(startMs)
+  moved.setDate(moved.getDate() + (days || 0))
+  var start = Math.round((moved.getTime() + minutes * 60000) / SNAP) * SNAP
+  return { start: start, end: start + (endMs - startMs) }
+}
+
+// The calendar-ctl arguments that put ev at new times, through the same path
+// as the editor: only this occurrence of a repeating event moves.
+function dragArgs(ev, startMs, endMs) {
+  var d = eventDraft(ev)
+  var s = new Date(startMs), e = new Date(endMs)
+  d.date = keyForDate(s); d.endDate = keyForDate(e)
+  d.from = clockInput(minutesOf(s)); d.to = clockInput(minutesOf(e))
+  return draftArgs(d)
+}
+
 // Minutes after midnight for a click in the hour grid, or -1 when it misses
 // the hours that grid is showing. y is measured from the first hour's line.
 function slotStart(y, hourHeight, firstHour, lastHour) {

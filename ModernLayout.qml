@@ -421,6 +421,8 @@ Item {
       onJoinEvent: function(url) { layout.p.openUrl(url) }
       onPickDay: function(key) { layout.p.openDay(key) }
       onCreateAt: function(dayKey, minutes) { layout.p.newEvent(dayKey, minutes) }
+      writingUid: layout.p ? layout.p.writingUid : ""
+      onMoveEvent: function(ev, startMs, endMs) { layout.p.moveEvent(ev, startMs, endMs) }
     }
 
     YearView {
