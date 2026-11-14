@@ -17,5 +17,8 @@
     "description": "The clock, with Google Calendar, Microsoft 365, Fastmail and iCloud events on the month grid, a day agenda, and Join buttons for meetings.",
     "category": "Time",
     "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.clock"
   }
 }
