@@ -297,22 +297,71 @@ function clockLabel(date, use24h) {
   return h + (date.getMinutes() ? ":" + pad(date.getMinutes()) : "") + (date.getHours() < 12 ? "am" : "pm")
 }
 
-// Every local day an event covers, with the label it shows on that day.
-function eventDays(e, use24h) {
+// ---- Bounds. events.json comes from servers, and one event can claim any
+//      span (all day from 2000 to 9999 is a valid VEVENT). Days are indexed
+//      only inside the sync's window, a day wider each side for time zones,
+//      and never more than these many per event or in all, so a cache can't
+//      make the shell's UI thread allocate without end. An event keeps its
+//      own start and end for display and edits; only its day list is cut.
+var MAX_EVENT_DAYS = 400
+var MAX_DAY_ROWS = 20000
+var DATE_KEY = /^\d{4}-\d{2}-\d{2}$/
+
+// { from, to } day keys to index: the published sync window, or a year and a
+// bit around today when the cache has none (or a malformed one).
+function indexWindow(data, today) {
+  var w = data && data.window
+  var a = w && new Date(w[0]), b = w && new Date(w[1])
+  if (a && b && !isNaN(a.getTime()) && !isNaN(b.getTime()) && b > a
+      && b.getTime() - a.getTime() <= MAX_EVENT_DAYS * 86400000) {
+    return { from: keyForDate(new Date(a.getTime() - 86400000)), to: keyForDate(new Date(b.getTime() + 86400000)) }
+  }
+  var t = today || new Date()
+  return { from: keyForDate(new Date(t.getFullYear(), t.getMonth(), t.getDate() - 60)),
+           to: keyForDate(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 340)) }
+}
+
+function validKey(k) {
+  if (!DATE_KEY.test(String(k))) return false
+  var p = String(k).split("-")
+  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]))
+  return keyForDate(d) === k
+}
+
+// Every local day an event covers inside win (see indexWindow), with the
+// label it shows on that day. [] for an event whose dates don't parse.
+function eventDays(e, use24h, win) {
   var out = []
   if (e.allDay) {
+    if (!validKey(e.start) || !(e.end === undefined || e.end === null || e.end === "" || validKey(e.end))) return out
     var last = addDays(e.end > e.start ? e.end : addDays(e.start, 1), -1)
-    for (var k = e.start; k <= last; k = addDays(k, 1))
+    var k = win && win.from > e.start ? win.from : e.start
+    var stop = win && win.to < last ? win.to : last
+    for (; k <= stop && out.length < MAX_EVENT_DAYS; k = addDays(k, 1))
       out.push({ key: k, label: "All day", sort: "0" })
     return out
   }
   var start = new Date(e.start), end = new Date(e.end)
-  if (!(end > start)) end = new Date(start.getTime() + 60000)
+  if (isNaN(start.getTime())) return out
+  if (isNaN(end.getTime()) || !(end > start)) end = new Date(start.getTime() + 60000)
   // The last moment inside the event: an event ending at midnight belongs to
   // the day before, not to the day it ends on.
   var lastKey = keyForDate(new Date(end.getTime() - 1))
   var firstKey = keyForDate(start)
-  for (var d = firstKey; d <= lastKey; d = addDays(d, 1)) {
+  // Clamped as instants, not as key strings: a year outside 1000–9999 doesn't
+  // sort as text.
+  var lo = start, hi = end
+  if (win) {
+    var p = win.from.split("-"), q = win.to.split("-")
+    var wlo = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]))
+    var whi = new Date(Number(q[0]), Number(q[1]) - 1, Number(q[2]) + 1)
+    if (end <= wlo || start >= whi) return out
+    if (wlo > lo) lo = wlo
+    if (whi < hi) hi = whi
+  }
+  var d0 = keyForDate(lo)
+  var d1 = keyForDate(new Date(hi.getTime() - 1))
+  for (var d = d0; d <= d1 && out.length < MAX_EVENT_DAYS; d = addDays(d, 1)) {
     var label
     if (firstKey === lastKey) label = clockLabel(start, use24h) + " – " + clockLabel(end, use24h)
     else if (d === firstKey) label = "from " + clockLabel(start, use24h)
@@ -354,12 +403,14 @@ function indexEvents(data, use24h) {
   })
   var byDay = {}
   var evs = (data && data.events) || []
-  for (var j = 0; j < evs.length; j++) {
+  var win = indexWindow(data)
+  var rows = 0
+  for (var j = 0; j < evs.length && rows < MAX_DAY_ROWS; j++) {
     var e = evs[j]
     var cinfo = calendars[e.account + "/" + e.calendar]
     if (!cinfo || !cinfo.shown || e.status === "cancelled") continue
-    var days = eventDays(e, use24h)
-    for (var n = 0; n < days.length; n++) {
+    var days = eventDays(e, use24h, win)
+    for (var n = 0; n < days.length && rows < MAX_DAY_ROWS; n++, rows++) {
       var day = days[n]
       if (!byDay[day.key]) byDay[day.key] = []
       byDay[day.key].push({

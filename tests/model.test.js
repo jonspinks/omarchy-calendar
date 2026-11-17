@@ -3,7 +3,7 @@
 const fs = require("fs")
 const path = require("path")
 const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
-const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs, movable, moveNote," +
+const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs, movable, moveNote, eventDays, indexWindow," +
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
   " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes," +
@@ -363,6 +363,32 @@ eq(M.moveNote(mine, "P/primary", cals), "Guests get a new invitation, and a canc
 const gev = Object.assign({}, mine, { uid: "P/primary/1", account: "P", calendar: "primary" })
 eq(M.moveNote(gev, "P/family", cals), "", "moveNote: Google's own move within an account")
 eq(M.moveNote(Object.assign({}, mine, { guests: [] }), "P/primary", cals), "It is copied to the new calendar, and this one deleted.", "moveNote: no guests")
+
+// Bounded day indexing (marketplace review #14402): one event can claim any span.
+const bw = { from: "2026-10-12", to: "2027-03-18" }
+let t0 = Date.now()
+let huge = M.eventDays({ allDay: true, start: "2000-01-01", end: "9999-12-31" }, true, bw)
+eq([huge.length, huge[0].key, huge[huge.length - 1].key], [158, "2026-10-12", "2027-03-18"], "eventDays: an all-day span is cut to the window")
+huge = M.eventDays({ allDay: false, start: "0100-01-01T00:00:00Z", end: "+275000-01-01T00:00:00Z" }, true, bw)
+eq([huge.length, huge[0].key, huge[0].label], [158, "2026-10-12", "All day"], "eventDays: so is a timed one, whatever its years")
+eq(M.eventDays({ allDay: true, start: "2000-01-01", end: "9999-12-31" }, true).length, 400, "eventDays: at most 400 days without a window")
+eq([M.eventDays({ allDay: true, start: "2026-13-40", end: "2026-14-01" }, true, bw),
+    M.eventDays({ allDay: true, start: "26-1-1", end: "2026-11-02" }, true, bw),
+    M.eventDays({ allDay: false, start: "soon", end: "later" }, true, bw)], [[], [], []], "eventDays: dates that don't parse give no days")
+eq(M.eventDays({ allDay: true, start: "2026-11-02", end: "2026-11-05" }, true, bw).map(x => x.key),
+   ["2026-11-02", "2026-11-03", "2026-11-04"], "eventDays: an ordinary multi-day event is unchanged")
+const across = M.eventDays({ allDay: false, start: "2026-11-02T15:00:00Z", end: "2026-11-04T15:00:00Z" }, false, bw)
+eq(across.map(x => x.label), ["from 10am", "All day", "until 10am"], "eventDays: labels keep the event's own ends")
+eq(M.eventDays({ allDay: true, start: "2030-01-01", end: "2030-01-02" }, true, bw), [], "eventDays: outside the window, nothing")
+const longOnes = []
+for (let i = 0; i < 300; i++) longOnes.push({ uid: "a/c/" + i, account: "a", calendar: "c", title: "x", allDay: true, start: "2000-01-01", end: "9999-12-31", status: "confirmed" })
+const bigIndex = M.indexEvents({ window: ["2026-10-13T00:00:00Z", "2027-03-17T00:00:00Z"], accounts: [{ name: "a" }],
+                                 calendars: [{ account: "a", id: "c", name: "C" }], events: longOnes }, true)
+let total = 0; for (const k in bigIndex.byDay) total += bigIndex.byDay[k].length
+eq(total, 20000, "indexEvents: rows stop at the budget, however many long events there are")
+eq(Date.now() - t0 < 3000, true, "bounded indexing stays quick (" + (Date.now() - t0) + " ms)")
+eq(M.indexWindow({ window: ["2026-10-13T00:00:00Z", "2027-03-17T00:00:00Z"] }), { from: "2026-10-11", to: "2027-03-17" }, "indexWindow: the sync window in local days, a day wider")
+eq(M.indexWindow({ window: ["2000-01-01T00:00:00Z", "9999-01-01T00:00:00Z"] }, new Date(2026, 10, 17)).from, "2026-09-18", "indexWindow: a window too wide is not trusted")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")
