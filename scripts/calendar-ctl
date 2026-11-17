@@ -19,6 +19,7 @@
     calendar-ctl update <uid> [--title <t>] [--start <when>] [--end <when>]
                  [--all-day | --timed] [--location <text>] [--busy | --free]
                  [--invite <email>]... [--uninvite <email>]... [--series]
+                 [--calendar <account>/<calendar id>]
     calendar-ctl guests <uid>         # who is invited, and their answers
     calendar-ctl delete <uid> [--series]
 
@@ -28,6 +29,11 @@ the last (it defaults to one day, or one hour for a timed event).
 
 --invite and --uninvite add and remove guests on an event you can edit; the
 provider sends them the invitation or the cancellation.
+
+--calendar moves an event you organise to another calendar, after any other
+change. Within one Google account it keeps its guests' answers; otherwise it
+is copied and the original deleted, so guests get a new invitation and a
+cancellation. A repeating event can't be moved.
 
 Secrets never touch disk here. Each account's refresh token (and, for Google,
 the OAuth client secret; for CalDAV, the app password) is stored in the GNOME
@@ -194,7 +200,7 @@ def event_options(args, cmd):
     dash, so a title from anywhere can't turn into an option."""
     opt, it = {}, iter(args)
     names = {"--title": "title", "--start": "start", "--end": "end", "--location": "location",
-             "--notes": "notes"}
+             "--notes": "notes", "--calendar": "calendar"}
     for x in it:
         if x in names:
             v = next(it, None)
@@ -262,10 +268,21 @@ def main(argv):
             if opt.pop("uninvite", None):
                 die("--uninvite is for update")
             opt.pop("series", None)
+            if opt.pop("calendar", None):
+                die("--calendar is for update; create takes the calendar first")
             print(edit.create(args[0], **opt))
         else:
-            edit.update(args[0], **opt)
-            print("Saved.")
+            target = opt.pop("calendar", None)
+            if opt.pop("notes", None) is not None:
+                die("--notes is for create")
+            if target and opt.get("series"):
+                die("a whole series can't be moved to another calendar")
+            uid = args[0]
+            if opt or not target:
+                edit.update(uid, **opt)
+            if target:
+                uid = edit.move(uid, target)
+            print(uid if target else "Saved.")
         sync.main(["sync", "--quiet"])
     elif cmd == "guests" and len(args) == 1:
         cmd_guests(args[0])

@@ -366,6 +366,60 @@ def update(uid, title=None, start=None, end=None, all_day=None, location=None, s
     _saved(a, e, cal, ev or {}, series, local, "attendees" in body)
 
 
+def move(uid, ref):
+    """Move an event you organise to another calendar. Returns its new uid.
+
+    Within one Google account it is Google's own move: the event keeps its id,
+    its guests and their answers. Everywhere else (Microsoft has no move, and
+    accounts can't hand events to each other) it is copied into the new
+    calendar and then deleted from the old one: guests get a new invitation
+    and a cancellation, and the notes go across as plain text. A repeating
+    event stays where it is, since a series can't be copied faithfully.
+    """
+    a, path, st, e, eid = locate(uid)
+    ta, tcal = calendar_of(ref)
+    if ta["name"] == a["name"] and tcal["id"] == e["calendar"]:
+        return uid
+    if not (e.get("editable") and e.get("organizer")):
+        raise EditError("only an event you organise can move to another calendar")
+    if e.get("recurring") or e.get("seriesId"):
+        raise EditError("a repeating event can't move to another calendar from here")
+    if a["provider"] == "google" and ta["name"] == a["name"]:
+        from . import google
+        tok = token(a)
+        ev = auth.send_json("POST", GOOGLE + "/calendars/%s/events/%s/move?destination=%s&sendUpdates=none"
+                            % (q(e["calendar"]), q(eid), q(tcal["id"])), tok, None)
+        new = google.normalise(a["name"], tcal, ev)
+        with sync.locked():
+            st = sync.read_json(path, {"events": {}})
+            st.get("events", {}).pop(uid, None)
+            st.setdefault("events", {})[new["uid"]] = new
+            sync.write_private(path, st)
+            sync.republish()
+        return new["uid"]
+    guests = e.get("guests") or []
+    if e.get("guestsHidden") or (e.get("guestTotal") or 0) > len(guests):
+        raise EditError("this event's guest list isn't all here, so it can't be copied to another calendar")
+    invite = [g["email"] for g in guests
+              if g.get("email") and not g.get("me") and not g.get("organizer") and not g.get("room")]
+    notes = e.get("notes")
+    if a["provider"] == "microsoft" and notes is None:
+        ev = auth.send_json("GET", GRAPH + "/me/calendars/%s/events/%s?$select=body" % (q(e["calendar"]), q(eid)),
+                            token(a), None, {"Prefer": 'outlook.body-content-type="text"'})
+        from .model import plain_notes
+        notes = plain_notes(((ev or {}).get("body") or {}).get("content") or "")
+    start = e["start"] if e["allDay"] else e["start"].replace("Z", "+00:00")
+    end = e["end"] if e["allDay"] else e["end"].replace("Z", "+00:00")
+    new_uid = create(ref, e.get("title") or "", start, end, e["allDay"], e.get("location") or "",
+                     invite, e.get("busy", True), notes or "")
+    try:
+        delete(uid)
+    except Exception as err:
+        raise EditError("it is now in %s too, but the original couldn't be deleted (%s); delete it by hand"
+                        % (tcal.get("name") or tcal["id"], err))
+    return new_uid
+
+
 def _saved(a, e, cal, ev, series, local, guests_changed):
     """Put the provider's reply to a write into the local copy."""
     from . import google, graph

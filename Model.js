@@ -813,8 +813,31 @@ function eventDraft(ev) {
     d.from = clockInput(minutesOf(s)); d.to = clockInput(minutesOf(e))
   }
   d.original = { title: d.title, location: d.location, allDay: d.allDay, busy: d.busy,
-                 date: d.date, endDate: d.endDate, from: d.from, to: d.to }
+                 date: d.date, endDate: d.endDate, from: d.from, to: d.to, calendar: d.calendar }
   return d
+}
+
+// ---- Moving to another calendar. Only an event you organise, and not a
+//      repeating one (calendar-ctl update --calendar, see edit.move).
+function movable(ev) {
+  return !!ev && !!ev.editable && !!ev.organizer && !ev.recurring
+}
+
+// What a move does to the guests, said before Save; "" when nothing to say.
+// Within one Google account it is Google's own move and they notice nothing;
+// anywhere else it is a copy and a delete, so they get a new invitation.
+// calendars: [{ value: "<account>/<id>", provider }].
+function moveNote(ev, toRef, calendars) {
+  if (!ev || !toRef || toRef === ev.account + "/" + ev.calendar) return ""
+  var to = String(toRef).split("/")[0]
+  var provider = ""
+  for (var i = 0; i < (calendars || []).length; i++) {
+    if (String(calendars[i].value).split("/")[0] === ev.account) { provider = calendars[i].provider; break }
+  }
+  if (provider === "google" && to === ev.account) return ""
+  var others = (ev.guests || []).filter(function(g) { return !g.me && !g.organizer && !g.room })
+  if (!others.length) return "It is copied to the new calendar, and this one deleted."
+  return "Guests get a new invitation, and a cancellation for this one."
 }
 
 // ---- Dragging in the hour grid. A block moves by whole days across columns
@@ -943,6 +966,10 @@ function draftArgs(d) {
   if (g.error) return g
   for (var n = 0; n < g.invited.length; n++) args.push("--invite", g.invited[n])
   for (var m = 0; m < g.uninvited.length; m++) args.push("--uninvite", g.uninvited[m])
+  if (d.calendar && o.calendar && d.calendar !== o.calendar) {
+    if (d.recurring) return { error: "A repeating event can't move to another calendar." }
+    args.push("--calendar", d.calendar)
+  }
   if (args.length === 2) return { args: [] }   // nothing changed
   if (d.series) args.push("--series")
   return { args: args }

@@ -1,6 +1,8 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
+import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -272,9 +274,13 @@ Panel {
   readonly property var editableCalendars: {
     var out = []
     var cals = (root.eventData && root.eventData.calendars) || []
+    var accounts = (root.eventData && root.eventData.accounts) || []
+    var provider = {}
+    for (var n = 0; n < accounts.length; n++) provider[accounts[n].name] = accounts[n].provider
     for (var i = 0; i < cals.length; i++) {
       var c = cals[i]
-      if (c.shown && c.editable) out.push({ value: c.account + "/" + c.id, label: c.account + ": " + (c.name || c.id), primary: c.primary })
+      if (c.shown && c.editable) out.push({ value: c.account + "/" + c.id, label: c.account + ": " + (c.name || c.id),
+                                             primary: c.primary, provider: provider[c.account] || "" })
     }
     return out
   }
@@ -356,6 +362,53 @@ Panel {
   }
 
   Process { id: failProc }
+
+  // ---- The screensaver. An open panel keeps the keyboard and sits on the
+  //      overlay layer, so the screensaver came up as a small window under it
+  //      instead of fullscreen (omacom/omarchy#11234). Close a moment before
+  //      the session goes idle; and when the screensaver is started by hand,
+  //      close as its window opens and make that window fullscreen.
+  //      A new event being written is kept, as with any other close.
+  property var idleSettings: ({})
+  readonly property int idleCloseSeconds: {
+    var seconds = function(v, fallback) { var n = Number(v); return v === undefined || v === null || isNaN(n) ? fallback : n }
+    var times = [seconds(root.idleSettings.screensaver, 150), seconds(root.idleSettings.lock, 300)]
+      .filter(function(n) { return n > 0 })
+    return times.length ? Math.max(1, Math.min.apply(null, times) - 2) : 0
+  }
+
+  FileView {
+    path: (Quickshell.env("XDG_CONFIG_HOME") || (root.home + "/.config")) + "/omarchy/shell.json"
+    printErrors: false
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      try { root.idleSettings = JSON.parse(text()).idle || {} } catch (e) { root.idleSettings = {} }
+    }
+  }
+
+  IdleMonitor {
+    enabled: root.opened && root.idleCloseSeconds > 0
+    timeout: Math.max(1, root.idleCloseSeconds)
+    respectInhibitors: true
+    onIsIdleChanged: if (isIdle && root.opened) root.close()
+  }
+
+  Connections {
+    target: Hyprland
+    enabled: root.opened
+    function onRawEvent(event) {
+      if (event.name !== "openwindow") return
+      var fields = String(event.data).split(",")
+      if (fields[2] !== "org.omarchy.screensaver") return
+      root.close()
+      screensaverProc.command = ["hyprctl", "dispatch",
+        'hl.dsp.window.fullscreen({ mode = "fullscreen", action = "set", window = "address:0x' + fields[0] + '" })']
+      screensaverProc.running = true
+    }
+  }
+
+  Process { id: screensaverProc }
 
   function chooseCalendars() {
     termProc.command = ["omarchy-launch-floating-terminal-with-presentation",

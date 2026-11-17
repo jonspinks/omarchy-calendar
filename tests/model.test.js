@@ -3,7 +3,7 @@
 const fs = require("fs")
 const path = require("path")
 const src = fs.readFileSync(path.join(__dirname, "..", "Model.js"), "utf8")
-const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs," +
+const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, newDraft, draftArgs, movable, moveNote," +
   " nextUp, dueSnoozes, reminderText, keyForDate, addDays, dueReminders, claimName," +
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
   " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes," +
@@ -341,6 +341,28 @@ eq(M.dragArgs(dragEv, when(2026, 11, 13, 14, 0), when(2026, 11, 13, 14, 30)).arg
    ["update", "Google/c/abc", "--start", "2026-11-13 14:00", "--end", "2026-11-13 14:30", "--timed"], "dragArgs: update with the new times only")
 eq(M.dragArgs(dragEv, when(2026, 11, 12, 23, 30), when(2026, 11, 13, 0, 0)).args.slice(2, 6),
    ["--start", "2026-11-12 23:30", "--end", "2026-11-13 00:00"], "dragArgs: ending at midnight")
+
+// Moving to another calendar
+const mine = { uid: "E/cal/1", account: "E", calendar: "cal", title: "Plan", location: "", busy: true,
+               start: "2026-11-12T14:00:00Z", end: "2026-11-12T15:00:00Z", editable: true, organizer: true,
+               guests: [{ email: "me@x.co", me: true, organizer: true }, { email: "amy@x.co" }] }
+let md = M.eventDraft(mine)
+eq(M.draftArgs(md).args, [], "move: an untouched draft changes nothing")
+md.calendar = "P/primary"
+eq(M.draftArgs(md).args, ["update", "E/cal/1", "--calendar", "P/primary"], "move: --calendar for a new calendar")
+md.title = "Plan B"
+eq(M.draftArgs(md).args, ["update", "E/cal/1", "--title", "Plan B", "--calendar", "P/primary"], "move: with other changes in one write")
+const rd = M.eventDraft(Object.assign({}, mine, { recurring: true }))
+rd.calendar = "P/primary"
+eq(!!M.draftArgs(rd).error, true, "move: refused for a repeating event")
+eq([M.movable(mine), M.movable(Object.assign({}, mine, { organizer: false })), M.movable(Object.assign({}, mine, { recurring: true }))],
+   [true, false, false], "movable: your own one-off events only")
+const cals = [{ value: "E/cal", provider: "microsoft" }, { value: "P/primary", provider: "google" }, { value: "P/family", provider: "google" }]
+eq(M.moveNote(mine, "E/cal", cals), "", "moveNote: nothing while the calendar is unchanged")
+eq(M.moveNote(mine, "P/primary", cals), "Guests get a new invitation, and a cancellation for this one.", "moveNote: guests re-invited on a copy")
+const gev = Object.assign({}, mine, { uid: "P/primary/1", account: "P", calendar: "primary" })
+eq(M.moveNote(gev, "P/family", cals), "", "moveNote: Google's own move within an account")
+eq(M.moveNote(Object.assign({}, mine, { guests: [] }), "P/primary", cals), "It is copied to the new calendar, and this one deleted.", "moveNote: no guests")
 
 if (failed) { console.log(failed + " failed"); process.exit(1) }
 console.log("all passed")

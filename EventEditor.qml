@@ -51,6 +51,9 @@ Item {
   readonly property bool invitation: !!event && !event.organizer
   readonly property bool removable: !!event && (event.editable || event.calendarEditable)
   readonly property bool recurring: !!event && event.recurring
+  // An event you organise can move to another of your calendars with Save.
+  readonly property bool movable: !creating && Model.movable(event)
+  readonly property string moveNote: movable ? Model.moveNote(event, calendarRef, calendars) : ""
 
   property bool allDay: false
   property bool busy: true
@@ -551,9 +554,10 @@ Item {
       font.pixelSize: Style.font.subtitle
     }
 
-    // Which calendar: chosen for a new event, shown for an existing one.
+    // Which calendar: chosen for a new event or one you organise, shown for
+    // the rest (an invitation, a repeating event).
     Dropdown {
-      visible: editor.creating
+      visible: editor.creating || editor.movable
       width: parent.width
       showLabel: false
       options: editor.calendars
@@ -563,8 +567,15 @@ Item {
       onChanged: function(v) { editor.calendarRef = v }
     }
     Caption {
-      visible: !editor.creating && !!editor.event
+      visible: !editor.creating && !editor.movable && !!editor.event
       text: editor.event ? (editor.event.calendarName + (editor.recurring ? "  ·  repeats" : "")) : ""
+      font.letterSpacing: 0
+    }
+    Caption {
+      visible: editor.moveNote !== ""
+      width: parent.width
+      wrapMode: Text.WordWrap
+      text: editor.moveNote
       font.letterSpacing: 0
     }
 
