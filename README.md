@@ -186,15 +186,20 @@ ID. If the organisation requires admin consent, an admin has to grant it once.
 - **Calendars:** click one in the list on the left to show or hide it. A
   hidden calendar isn't downloaded at all. `calendar-ctl choose` does the
   same in a checklist.
+- **Settings** (the gear, or `,`): the calendar new events start on, and
+  how long they run (15 minutes to 2 hours, an hour by default). Each event
+  can still be put on another calendar or made longer in its own form.
 - **Keys:** `1`–`6` views, `[` `]` or the arrow keys to step, `t` today,
-  `n` new event, `w` to flip the first day of the week.
+  `n` new event, `,` settings, `w` to flip the first day of the week.
 - **Sync** runs every three minutes while the shell runs, and when you open
   the calendar. `calendar-ctl sync` runs one by hand.
 
 **Settings** (in the widget's entry in `shell.json`, all optional):
 `"layout": "classic"` starts in compact mode; `"reminders": false` turns
 reminders off; `"view"` is the view it opens in; `"daysCount"` is how many
-days the days view shows (2 to 7, 4 by default); `"format"` is the clock's
+days the days view shows (2 to 7, 4 by default); `"defaultCalendar"`
+(`"<account>/<calendar id>"`) and `"defaultDuration"` (15, 30, 45, 60, 90 or
+120 minutes) are what the Settings sheet writes; `"format"` is the clock's
 own format, and its 12- or 24-hour choice carries into the calendar.
 
 **Key bindings:** the calendar answers IPC, so you can bind keys to it, e.g.

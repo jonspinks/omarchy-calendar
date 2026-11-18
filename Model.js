@@ -935,15 +935,30 @@ function slotStart(y, hourHeight, firstHour, lastHour) {
   return (firstHour + index) * 60
 }
 
+// The lengths a new event can start at (the "defaultDuration" setting), as
+// Outlook offers them. Anything else, a hand-edited shell.json included, is an hour.
+var MEETING_LENGTHS = [15, 30, 45, 60, 90, 120]
+
+function meetingLength(minutes) {
+  var n = Number(minutes)
+  return MEETING_LENGTHS.indexOf(n) >= 0 ? n : 60
+}
+
+// The choices for the settings sheet's dropdown, whose values are strings.
+function meetingLengthOptions() {
+  return MEETING_LENGTHS.map(function(m) { return { value: String(m), label: lengthLabel(m) } })
+}
+
 // A new event on dayKey: the next whole hour today, 9am on any other day.
 // startMinute, when it is a real number, is a double-clicked hour instead.
-function newDraft(dayKey, now, calendarRef, startMinute) {
+// It runs for minutes (meetingLength), and never past the end of its day.
+function newDraft(dayKey, now, calendarRef, startMinute, minutes) {
   var clicked = typeof startMinute === "number" && isFinite(startMinute) && startMinute >= 0
   var start = clicked ? Math.min(23 * 60, Math.floor(startMinute))
                       : (dayKey === keyForDate(now) ? Math.min(23 * 60, (now.getHours() + 1) * 60) : 9 * 60)
   return { mode: "create", uid: "", calendar: calendarRef || "", title: "", location: "", notes: "",
            allDay: false, date: dayKey, endDate: dayKey,
-           from: clockInput(start), to: clockInput(Math.min(start + 60, 23 * 60 + 59)),
+           from: clockInput(start), to: clockInput(Math.min(start + meetingLength(minutes), 23 * 60 + 59)),
            invite: "", series: false, recurring: false, busy: true, original: null,
            guests: [], invited: [], uninvited: [], guestText: "" }
 }
@@ -1266,7 +1281,10 @@ if (typeof module !== "undefined") {
     applyGuestPick: applyGuestPick,
     guestSuggestions: guestSuggestions,
     slotStart: slotStart,
-    newDraft: newDraft
+    newDraft: newDraft,
+    meetingLength: meetingLength,
+    meetingLengthOptions: meetingLengthOptions,
+    MEETING_LENGTHS: MEETING_LENGTHS
   }
 }
 

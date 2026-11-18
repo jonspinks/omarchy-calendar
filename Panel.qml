@@ -285,6 +285,8 @@ Panel {
     return out
   }
 
+  // The calendar a new event starts on: the one chosen in Settings while it
+  // is still there to write to, else the account's primary, else the first.
   function defaultCalendar() {
     var saved = String(setting("defaultCalendar", "") || "")
     var list = root.editableCalendars
@@ -295,6 +297,7 @@ Panel {
 
   function openEditor(ev) {
     if (!ev || !ev.uid) return
+    root.settingsOpen = false
     root.editorError = ""
     root.draftEvent = ev
     root.createBaseline = null
@@ -316,13 +319,14 @@ Panel {
   }
 
   function newEvent(dayKey, minutes) {
+    root.settingsOpen = false
     root.editorError = ""
     root.draftEvent = null
     if (dayKey) {
       root.selectedKey = dayKey
       root.showSelectedMonth()
     }
-    var d = Model.newDraft(root.selectedKey, new Date(), root.defaultCalendar(), minutes)
+    var d = Model.newDraft(root.selectedKey, new Date(), root.defaultCalendar(), minutes, root.defaultDuration)
     root.createBaseline = Model.draftSnapshot(d)
     root.draft = d
   }
@@ -357,11 +361,41 @@ Panel {
     var out = Model.draftArgs(d)
     if (out.error) { root.editorError = out.error; return }
     if (!out.args.length) { root.closeEditor(); return }
-    if (d.mode === "create" && d.calendar !== setting("defaultCalendar", "")) persistSettings({ defaultCalendar: d.calendar })
     root.runWrite(d.uid, out.args)
   }
 
   Process { id: failProc }
+
+  // ---- Settings (SettingsSheet.qml): what a new event starts with. The
+  //      calendar is only what is chosen here; saving an event in another
+  //      one no longer moves the default, or the setting would not hold.
+  property bool settingsOpen: false
+  // The compact layout shows either sheet in place of the month and the day.
+  readonly property bool sheetOpen: editorOpen || settingsOpen
+  readonly property int defaultDuration: Model.meetingLength(setting("defaultDuration", 60))
+
+  function openSettings() {
+    if (root.editorOpen) {
+      if (writeProc.running) return
+      root.closeEditor()
+    }
+    root.settingsOpen = true
+  }
+
+  function closeSettings() {
+    if (!root.settingsOpen) return
+    root.settingsOpen = false
+    Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
+  }
+
+  function setDefaultCalendar(ref) {
+    if (ref && ref !== setting("defaultCalendar", "")) persistSettings({ defaultCalendar: ref })
+  }
+
+  function setDefaultDuration(minutes) {
+    var m = Model.meetingLength(minutes)
+    if (m !== root.defaultDuration) persistSettings({ defaultDuration: m })
+  }
 
   // ---- The screensaver. An open panel keeps the keyboard and sits on the
   //      overlay layer, so the screensaver came up as a small window under it
@@ -610,6 +644,7 @@ Panel {
   function close() {
     setCenterHoverRevealSuppressed(false)
     if (root.editingLife) root.cancelEditingLife()
+    root.settingsOpen = false
     // A new event that has been started stays, so looking up an address and
     // clicking outside does not throw the form away. Cancel, Escape and the
     // dimmed sheet still drop it. An edit of an existing event is dropped
@@ -780,7 +815,8 @@ Panel {
         if (dy !== 0 && (root.viewMode === "month" || !root.modern)) root.moveYear(dy)
       }
       onActivateRequested: root.goToToday()
-      onCloseRequested: root.close()
+      // Escape closes the settings sheet first, then the panel.
+      onCloseRequested: root.settingsOpen ? root.closeSettings() : root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
         if (t >= "1" && t <= "6") { root.setView(Model.VIEWS[Number(t) - 1]); root.setLayout(true) }
@@ -791,6 +827,7 @@ Panel {
         else if (t === "t" || t === "T") root.goToToday()
         else if (t === "w" || t === "W") root.toggleWeekStart()
         else if (t === "n" || t === "N") root.newEvent()
+        else if (t === ",") root.settingsOpen ? root.closeSettings() : root.openSettings()
       }
 
       ModernLayout {
@@ -1125,6 +1162,21 @@ Panel {
             onOpenLink: function(url) { root.openUrl(url) }
           }
 
+          SettingsSheet {
+            visible: root.settingsOpen && !root.modern
+            width: Math.min(parent.width, Style.space(520))
+            anchors.horizontalCenter: parent.horizontalCenter
+            height: visible ? implicitHeight : 0
+            calendars: root.editableCalendars
+            calendarRef: root.settingsOpen ? root.defaultCalendar() : ""
+            duration: root.defaultDuration
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
+            onCalendarChosen: function(ref) { root.setDefaultCalendar(ref) }
+            onDurationChosen: function(minutes) { root.setDefaultDuration(minutes) }
+            onDone: root.closeSettings()
+          }
+
           // ---- Which view: only in the expanded layout now (keys 1 to 6
           //      expand into one).
           Item {
@@ -1147,7 +1199,7 @@ Panel {
 
           // ---- Day, week and working week.
           TimeGrid {
-            visible: root.isTimeView && !root.editorOpen
+            visible: root.isTimeView && !root.sheetOpen
             width: Math.min(parent.width, Style.space(root.viewMode === "day" ? 520 : 880))
             anchors.horizontalCenter: parent.horizontalCenter
             height: implicitHeight
@@ -1185,7 +1237,7 @@ Panel {
           //      the seven day columns. Always six rows, so the popup is
           //      exactly as tall in February as it is in August.
           Item {
-            visible: !root.editorOpen
+            visible: !root.sheetOpen
             width: parent.width
             height: gridColumn.y + gridColumn.height
 
@@ -1388,7 +1440,7 @@ Panel {
           //      The label is centered and fixed-width, so it holds still
           //      from "MAY" to "SEPTEMBER".
           Item {
-            visible: !root.editorOpen
+            visible: !root.sheetOpen
             width: parent.width
             height: monthNav.height
 
@@ -1446,7 +1498,7 @@ Panel {
           //      own calendar app; a meeting gets a Join button. The time
           //      views show the events themselves, so they don't need it.
           Item {
-            visible: !root.editorOpen
+            visible: !root.sheetOpen
             width: parent.width
             height: agenda.height
 
@@ -1663,6 +1715,15 @@ Panel {
                   foreground: root.contentForeground
                   fontFamily: root.contentFontFamily
                   onClicked: root.syncNow()
+                }
+
+                PanelActionButton {
+                  anchors.verticalCenter: parent.verticalCenter
+                  iconText: "󰒓"
+                  tooltipText: "Settings (,)"
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  onClicked: root.openSettings()
                 }
               }
             }

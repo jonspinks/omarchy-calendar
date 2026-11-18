@@ -16,8 +16,9 @@ node tests/typing.test.js
 qmltest=/usr/lib/qt6/bin/qmltestrunner
 if [[ -x $qmltest ]]; then
   QT_QPA_PLATFORM=offscreen "$qmltest" -silent -input tests/qml/tst_typing.qml
-  # The real EventEditor.qml, reused from one draft to the next, against
-  # stand-ins for the shell's modules generated from the installed shell.
+  # The real EventEditor.qml, reused from one draft to the next, and the
+  # real SettingsSheet.qml, against stand-ins for the shell's modules
+  # generated from the installed shell.
   if python3 -B tests/qml/make_stubs.py "$scratch/qml"; then
     QT_QPA_PLATFORM=offscreen "$qmltest" -silent -import "$scratch/qml" -input tests/qml/editor
   else

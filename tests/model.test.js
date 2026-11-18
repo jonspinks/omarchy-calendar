@@ -8,7 +8,8 @@ const M = new Function(src + "; return { parseClock, parseDateText, eventDraft, 
   " parseAddresses, guestEdit, guestRemove, guestRows, guestSummary, indexEvents," +
   " formatDayField, formatDayLong, viewDays, stepAnchor, rangeTitle, daysCount, notesHtml, meetingNotes," +
   " draftSnapshot, draftUnchanged, VIEWS, knownGuests, guestSuggestions, guestQuery, applyGuestPick, slotStart," +
-  " parseMeetingLinks, timeSlots, clockText, lengthLabel, draftLength, moveStart, draggable, dragTimes, dragArgs }")()
+  " parseMeetingLinks, timeSlots, clockText, lengthLabel, draftLength, moveStart, draggable, dragTimes, dragArgs,"
+  + " meetingLength, meetingLengthOptions, MEETING_LENGTHS }")()
 
 let failed = 0
 function eq(got, want, name) {
@@ -226,6 +227,19 @@ let noon = M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c")
 eq([noon.from, noon.to], ["12:00", "13:00"], "create: today, with no hour, is the next hour")
 eq(M.newDraft("2026-10-02", new Date(2026, 8, 27, 21, 10), "Google/c", "14:00").from, "09:00", "create: a start that isn't a number is ignored")
 eq(M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c", 23 * 60).to, "23:59", "create: a late hour still ends the same day")
+// How long a new event runs: the "defaultDuration" setting.
+let half = M.newDraft("2026-10-02", new Date(2026, 8, 27, 21, 10), "Google/c", undefined, 30)
+eq([half.from, half.to], ["09:00", "09:30"], "create: a chosen length")
+eq(M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c", 14 * 60, 90).to, "15:30", "create: a chosen length from a clicked hour")
+eq(M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c", 14 * 60).to, "15:00", "create: an hour by default")
+eq(M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c", 23 * 60, 120).to, "23:59", "create: a long event late on still ends the same day")
+eq(M.newDraft("2026-10-02", new Date(2026, 9, 2, 11, 15), "Google/c", 23 * 60, 45).to, "23:45", "create: a short one late on fits")
+eq([7, 0, -30, 600, "abc", null, NaN].map(function(v) { return M.newDraft("2026-10-02", new Date(2026, 8, 27, 21, 10), "Google/c", 9 * 60, v).to }),
+   ["10:00", "10:00", "10:00", "10:00", "10:00", "10:00", "10:00"], "create: a length that isn't offered is an hour")
+eq([M.meetingLength("30"), M.meetingLength(120), M.meetingLength(undefined), M.meetingLength(61)], [30, 120, 60, 60],
+   "meetingLength: the setting, as stored or typed")
+eq(M.meetingLengthOptions().map(function(o) { return o.value + "=" + o.label }),
+   ["15=15 min", "30=30 min", "45=45 min", "60=1 h", "90=1.5 h", "120=2 h"], "meetingLength: the dropdown's choices")
 eq([M.slotStart(0, 40, 7, 20), M.slotStart(41, 40, 7, 20), M.slotStart(40 * 12, 40, 7, 20)],
    [420, 480, 19 * 60], "slot: the hour the pointer is in")
 eq([M.slotStart(-1, 40, 7, 20), M.slotStart(40 * 13, 40, 7, 20), M.slotStart(0, 0, 7, 20)],

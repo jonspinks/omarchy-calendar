@@ -116,6 +116,15 @@ Item {
 
       PanelActionButton {
         anchors.verticalCenter: parent.verticalCenter
+        iconText: "󰒓"
+        tooltipText: "Settings (,)"
+        foreground: layout.p && layout.p.settingsOpen ? Color.accent : layout.fg
+        fontFamily: layout.fontName
+        onClicked: layout.p.settingsOpen ? layout.p.closeSettings() : layout.p.openSettings()
+      }
+
+      PanelActionButton {
+        anchors.verticalCenter: parent.verticalCenter
         iconText: "󰊔"
         tooltipText: "Compact: Omarchy's month and the day's appointments"
         foreground: layout.fg
@@ -445,11 +454,51 @@ Item {
   // ----------------------------------------------------------------- sheet
   // A click on the dimmed view closes the sheet, like any modern side sheet.
   Rectangle {
-    visible: layout.p && layout.p.editorOpen
+    visible: layout.p && (layout.p.editorOpen || layout.p.settingsOpen)
     anchors.fill: main
     color: Color.popups.background
     opacity: 0.45
-    MouseArea { anchors.fill: parent; onClicked: layout.p.closeEditor() }
+    MouseArea {
+      anchors.fill: parent
+      onClicked: layout.p.settingsOpen ? layout.p.closeSettings() : layout.p.closeEditor()
+    }
+  }
+
+  // Settings, in the same place and style as an event.
+  Rectangle {
+    visible: layout.p && layout.p.settingsOpen
+    anchors.top: main.top
+    anchors.bottom: main.bottom
+    anchors.right: main.right
+    width: Math.min(main.width, Style.space(440))
+    color: Color.popups.background
+    border.width: Style.spacing.hairline
+    border.color: Qt.rgba(layout.fg.r, layout.fg.g, layout.fg.b, 0.15)
+    radius: Style.cornerRadius
+
+    MouseArea { anchors.fill: parent }   // clicks on the sheet stay on it
+
+    Flickable {
+      id: settingsScroll
+      anchors.fill: parent
+      anchors.margins: Style.space(14)
+      contentHeight: settingsSheet.implicitHeight
+      clip: true
+      boundsBehavior: Flickable.StopAtBounds
+
+      SettingsSheet {
+        id: settingsSheet
+        width: parent.width
+        calendars: layout.p ? layout.p.editableCalendars : []
+        calendarRef: layout.p && layout.p.settingsOpen ? layout.p.defaultCalendar() : ""
+        duration: layout.p ? layout.p.defaultDuration : 60
+        foreground: layout.fg
+        fontFamily: layout.fontName
+        onCalendarChosen: function(ref) { layout.p.setDefaultCalendar(ref) }
+        onDurationChosen: function(minutes) { layout.p.setDefaultDuration(minutes) }
+        onDone: layout.p.closeSettings()
+      }
+    }
   }
 
   Rectangle {
